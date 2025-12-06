@@ -196,7 +196,7 @@ async def websocket_endpoint(
     try:
         while True:
             incoming = await websocket.receive_json()
-            include_sender = entry.mode is GameMode.SOLO
+            include_sender = True
 
             if "column" in incoming:
                 enriched = await _handle_player_move(

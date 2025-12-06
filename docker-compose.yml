@@ -45,7 +45,7 @@ services:
       context: ./connect_4/frontend
       dockerfile: Dockerfile
       args:
-        VITE_BACKEND_URL: /api
+        VITE_BACKEND_URL: /connect4/api
         VITE_BASE_PATH: /connect4/
     image: arcade-connect4-frontend:latest
     container_name: connect4-frontend
@@ -83,7 +83,7 @@ services:
       context: ./solve_parking/frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE: /api
+        VITE_API_BASE: /solve-parking/api
         VITE_BASE_PATH: /solve-parking/
     image: arcade-solve-parking-frontend:latest
     container_name: solve-parking-frontend

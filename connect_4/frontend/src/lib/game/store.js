@@ -86,7 +86,15 @@ function createInitialState(mode = MODES.SOLO, difficulty = DEFAULT_DIFFICULTY) 
 function buildWsUrl(gameId, playerId, mode) {
     const base = new URL(BACKEND_BASE_URL);
     base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
-    base.pathname = `/ws/${gameId}/${playerId}`;
+
+    const normalizedPath = base.pathname.replace(/\/+/g, '/').replace(/\/+$/u, '')
+    const prefix = normalizedPath.endsWith('/api')
+        ? normalizedPath.slice(0, -4)
+        : normalizedPath
+
+    const wsPath = `${prefix}/ws/${gameId}/${playerId}`.replace(/\/+/g, '/')
+    base.pathname = wsPath
+    base.search = ''
     if (mode === MODES.SOLO) {
         base.searchParams.set('mode', 'solo');
     }

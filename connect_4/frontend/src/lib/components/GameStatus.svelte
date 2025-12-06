@@ -16,6 +16,8 @@
     export let error = null;
     export let difficulty = null;
     export let aiDepth = null;
+    export let players = [];
+    export let localColor = null;
 
     $: summary = (() => {
         if (error) {
@@ -29,6 +31,18 @@
         }
         if (draw) {
             return `Draw game after ${moveCount} moves.`;
+        }
+        if (mode === MODES.MULTIPLAYER) {
+            const playerCount = Array.isArray(players) ? players.length : 0;
+            if (playerCount < 2) {
+                return "Waiting for another player…";
+            }
+            if (typeof localColor === "number") {
+                return localColor === toPlay
+                    ? "Your move."
+                    : "Opponent to play.";
+            }
+            return `${COLOR_LABELS[toPlay]} to play.`;
         }
         const opponent =
             mode === MODES.SOLO && toPlay === COLORS.RED

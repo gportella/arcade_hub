@@ -107,6 +107,10 @@ function createInitialState(mode = MODES.SOLO, difficulty = DEFAULT_DIFFICULTY) 
     const playableColumns = listPlayableColumns(board);
     const resolvedDifficulty = difficulty ?? DEFAULT_DIFFICULTY;
     const aiDepth = mode === MODES.SOLO ? DIFFICULTY_DEPTH[resolvedDifficulty] : null;
+    const initialMessage =
+        mode === MODES.MULTIPLAYER
+            ? 'Waiting for another player…'
+            : describeTurn(COLORS.YELLOW);
     return {
         mode,
         board,
@@ -116,7 +120,7 @@ function createInitialState(mode = MODES.SOLO, difficulty = DEFAULT_DIFFICULTY) 
         winner: null,
         draw: false,
         moveCount: 0,
-        message: describeTurn(COLORS.YELLOW),
+        message: initialMessage,
         gameId: null,
         playerId: null,
         connectionState: CONNECTION_STATES.DISCONNECTED,
@@ -124,9 +128,14 @@ function createInitialState(mode = MODES.SOLO, difficulty = DEFAULT_DIFFICULTY) 
         players: [],
         playerColors: {},
         localColor: null,
+        localColorValue: null,
         shareUrl: null,
         difficulty: resolvedDifficulty,
         aiDepth,
+        lobbyGames: [],
+        lobbyLoading: false,
+        lobbyError: null,
+        sessionReady: false,
     };
 }
 
@@ -218,18 +227,25 @@ function applyRemoteMove(state, payload) {
 function applyJoinEvent(state, payload) {
     const players = Array.from(new Set([...state.players, payload.playerId]));
     const playerColors = { ...state.playerColors };
-    if (payload.color) {
-        playerColors[payload.playerId] = payload.color;
+    const colorName =
+        typeof payload.color === 'string' && payload.color.length > 0
+            ? payload.color
+            : null;
+    if (colorName) {
+        playerColors[payload.playerId] = colorName;
     }
     const localColor =
-        payload.playerId === state.playerId && payload.color
-            ? payload.color
-            : state.localColor;
+        payload.playerId === state.playerId && colorName ? colorName : state.localColor;
+    const localColorValue =
+        payload.playerId === state.playerId && colorName
+            ? COLOR_NAME_TO_VALUE[colorName.toLowerCase()] ?? state.localColorValue
+            : state.localColorValue;
     return {
         ...state,
         players,
         playerColors,
         localColor,
+        localColorValue,
     };
 }
 
@@ -239,11 +255,14 @@ function applyLeaveEvent(state, payload) {
     delete playerColors[payload.playerId];
     const localColor =
         payload.playerId === state.playerId ? null : state.localColor;
+    const localColorValue =
+        payload.playerId === state.playerId ? null : state.localColorValue;
     return {
         ...state,
         players,
         playerColors,
         localColor,
+        localColorValue,
     };
 }
 
@@ -260,6 +279,10 @@ function applySessionState(state, payload) {
     if (state.playerId && colorsPayload[state.playerId]) {
         localColor = colorsPayload[state.playerId];
     }
+    const localColorValue =
+        localColor && typeof localColor === 'string'
+            ? COLOR_NAME_TO_VALUE[localColor.toLowerCase()] ?? null
+            : state.localColorValue;
 
     let toPlay = state.toPlay;
     if (typeof payload.currentTurn === 'string') {
@@ -269,15 +292,20 @@ function applySessionState(state, payload) {
         }
     }
 
-    const message = describeTurn(toPlay);
+    const waitingForOpponent =
+        state.mode === MODES.MULTIPLAYER && players.length < 2;
+    const message = waitingForOpponent ? 'Waiting for another player…' : describeTurn(toPlay);
 
     return {
         ...state,
         players,
         playerColors,
         localColor,
+        localColorValue,
         toPlay,
         message,
+        sessionReady: true,
+        error: null,
     };
 }
 
@@ -310,6 +338,9 @@ function createGameStore() {
             ...createInitialState(mode, desiredDifficulty),
             connectionState: CONNECTION_STATES.CONNECTING,
             playerId,
+            lobbyGames: currentState.lobbyGames,
+            lobbyLoading: currentState.lobbyLoading,
+            lobbyError: currentState.lobbyError,
         });
 
         try {
@@ -359,8 +390,13 @@ function createGameStore() {
                 shareUrl,
                 playerColors: {},
                 localColor: null,
+                localColorValue: null,
+                sessionReady: false,
             }));
             connect(gameId, playerId, responseMode);
+            refreshLobby().catch((refreshError) => {
+                console.debug('gameStore:startNewGame:lobby-refresh-failed', refreshError);
+            });
         } catch (error) {
             console.error('Failed to create game', error);
             set((state) => ({
@@ -382,6 +418,9 @@ function createGameStore() {
             connectionState: CONNECTION_STATES.CONNECTING,
             playerId,
             gameId,
+            lobbyGames: currentState.lobbyGames,
+            lobbyLoading: currentState.lobbyLoading,
+            lobbyError: currentState.lobbyError,
         });
 
         try {
@@ -407,9 +446,13 @@ function createGameStore() {
                 difficulty: state.difficulty,
                 aiDepth: null,
                 shareUrl,
+                sessionReady: false,
             }));
 
             connect(gameId, playerId, MODES.MULTIPLAYER);
+            refreshLobby().catch((refreshError) => {
+                console.debug('gameStore:joinGame:lobby-refresh-failed', refreshError);
+            });
         } catch (error) {
             console.error('Failed to join game', error);
             set((state) => ({
@@ -418,6 +461,9 @@ function createGameStore() {
                 error: error instanceof Error ? error.message : String(error),
                 shareUrl: buildShareUrl(gameId),
             }));
+            refreshLobby().catch((refreshError) => {
+                console.debug('gameStore:joinGame:lobby-refresh-failed', refreshError);
+            });
         }
     }
 
@@ -441,6 +487,7 @@ function createGameStore() {
                 gameId,
                 playerId,
                 error: null,
+                sessionReady: false,
             }));
         });
 
@@ -460,6 +507,7 @@ function createGameStore() {
             update((state) => ({
                 ...state,
                 connectionState: CONNECTION_STATES.CLOSED,
+                sessionReady: false,
             }));
         });
 
@@ -468,6 +516,7 @@ function createGameStore() {
             update((state) => ({
                 ...state,
                 error: 'WebSocket error occurred',
+                sessionReady: false,
             }));
         });
     }
@@ -517,6 +566,42 @@ function createGameStore() {
             return;
         }
 
+        if (currentState.mode === MODES.MULTIPLAYER) {
+            if (!currentState.sessionReady) {
+                update((state) => ({
+                    ...state,
+                    error: 'Waiting for the game to synchronise…',
+                }));
+                return;
+            }
+
+            const localColorValue =
+                typeof currentState.localColorValue === 'number'
+                    ? currentState.localColorValue
+                    : null;
+            if (localColorValue === null) {
+                update((state) => ({
+                    ...state,
+                    error: 'Waiting for color assignment…',
+                }));
+                return;
+            }
+            if (!Array.isArray(currentState.players) || currentState.players.length < 2) {
+                update((state) => ({
+                    ...state,
+                    error: 'Waiting for another player to join…',
+                }));
+                return;
+            }
+            if (localColorValue !== currentState.toPlay) {
+                update((state) => ({
+                    ...state,
+                    error: 'Not your turn yet.',
+                }));
+                return;
+            }
+        }
+
         update((state) => ({
             ...state,
             error: null,
@@ -529,6 +614,46 @@ function createGameStore() {
                 column,
             }),
         );
+    }
+
+    async function refreshLobby() {
+        update((state) => ({
+            ...state,
+            lobbyLoading: true,
+            lobbyError: null,
+        }));
+
+        try {
+            const response = await fetch(`${BACKEND_BASE_URL}/games`);
+            if (!response.ok) {
+                throw new Error(`Failed to load games: ${response.statusText}`);
+            }
+            /** @type {Array<{game_id: string, mode: string, players?: string[], capacity?: number}>} */
+            const payload = await response.json();
+            const joinable = payload
+                .filter((game) => game.mode === MODES.MULTIPLAYER)
+                .map((game) => ({
+                    gameId: game.game_id,
+                    players: Array.isArray(game.players) ? game.players : [],
+                    capacity: typeof game.capacity === 'number' ? game.capacity : 2,
+                }))
+                .filter((game) => game.players.length < game.capacity)
+                .filter((game) => game.gameId !== currentState.gameId);
+            joinable.sort((a, b) => b.players.length - a.players.length);
+
+            update((state) => ({
+                ...state,
+                lobbyGames: joinable,
+                lobbyLoading: false,
+                lobbyError: null,
+            }));
+        } catch (error) {
+            update((state) => ({
+                ...state,
+                lobbyLoading: false,
+                lobbyError: error instanceof Error ? error.message : String(error),
+            }));
+        }
     }
 
     function reset() {
@@ -545,6 +670,7 @@ function createGameStore() {
         joinGame,
         playColumn,
         reset,
+        refreshLobby,
     };
 }
 
@@ -561,6 +687,9 @@ if (typeof window !== 'undefined') {
             console.error('Failed to initialise game', error);
         });
     }
+    gameStore.refreshLobby().catch((error) => {
+        console.error('Failed to refresh lobby', error);
+    });
 } else {
     gameStore.startNewGame(MODES.SOLO).catch((error) => {
         console.error('Failed to initialise game', error);
@@ -571,14 +700,20 @@ export function formatStatus(state) {
     if (state.error) {
         return state.error;
     }
+    if (state.connectionState !== CONNECTION_STATES.CONNECTED) {
+        return 'Connecting…';
+    }
+    if (
+        state.mode === MODES.MULTIPLAYER &&
+        (!Array.isArray(state.players) || state.players.length < 2)
+    ) {
+        return 'Waiting for another player…';
+    }
     if (state.winner !== null) {
         return describeVictory(state.winner);
     }
     if (state.draw) {
         return 'Draw game';
-    }
-    if (state.connectionState !== CONNECTION_STATES.CONNECTED) {
-        return 'Connecting…';
     }
     return describeTurn(state.toPlay);
 }

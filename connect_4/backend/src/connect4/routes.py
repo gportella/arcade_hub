@@ -183,6 +183,8 @@ async def websocket_endpoint(
         await websocket.close(code=1008, reason="Session is full")
         return
 
+    await _broadcast_session_state(game_id, session, game)
+
     join_payload = {
         "type": "player_joined",
         "gameId": game_id,
@@ -190,20 +192,6 @@ async def websocket_endpoint(
         "color": COLOR_NAMES[player_color],
     }
     await session.broadcast(join_payload, sender_id=player_id, include_sender=True)
-
-    await session.send_to(
-        player_id,
-        {
-            "type": "session_state",
-            "gameId": game_id,
-            "players": await session.player_ids(),
-            "colors": {
-                pid: COLOR_NAMES[color]
-                for pid, color in (await session.players_with_colors()).items()
-            },
-            "currentTurn": COLOR_NAMES[game.state.to_play],
-        },
-    )
 
     try:
         while True:
@@ -246,6 +234,7 @@ async def websocket_endpoint(
         await session.broadcast(
             leave_payload, sender_id=player_id, include_sender=False
         )
+        await _broadcast_session_state(game_id, session, game)
         await discard_session(game_id, session)
 
 
@@ -417,3 +406,24 @@ def _build_move_payload(
         payload.update(extra)
 
     return payload
+
+
+async def _broadcast_session_state(
+    game_id: str, session: GameSession, game: Connect4Game
+) -> None:
+    payload = await _build_session_state_payload(game_id, session, game)
+    await session.broadcast(payload, sender_id=None, include_sender=True)
+
+
+async def _build_session_state_payload(
+    game_id: str, session: GameSession, game: Connect4Game
+) -> Dict[str, Any]:
+    players = await session.player_ids()
+    player_colors = await session.players_with_colors()
+    return {
+        "type": "session_state",
+        "gameId": game_id,
+        "players": players,
+        "colors": {pid: COLOR_NAMES[color] for pid, color in player_colors.items()},
+        "currentTurn": COLOR_NAMES[game.state.to_play],
+    }

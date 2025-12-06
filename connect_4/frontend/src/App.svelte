@@ -53,6 +53,7 @@
 
   onMount(() => {
     document.title = appName;
+    refreshLobbyList();
   });
 
   $: state = $gameStore;
@@ -133,12 +134,39 @@
     }
   }
 
+  function refreshLobbyList() {
+    gameStore
+      .refreshLobby()
+      .catch((error) => console.error("Failed to refresh lobby", error));
+  }
+
+  function handleJoinFromLobby(gameId) {
+    if (!gameId) {
+      return;
+    }
+    gameStore
+      .joinGame(gameId)
+      .catch((error) => console.error("Failed to join lobby game", error));
+  }
+
+  function summarizePlayers(list) {
+    if (!Array.isArray(list) || list.length === 0) {
+      return "";
+    }
+    return list.map((id) => id.slice(0, 6)).join(", ");
+  }
+
   $: isBoardInteractive =
     state &&
     !state.winner &&
     !state.draw &&
     state.connectionState === "connected" &&
-    !(state.mode === MODES.SOLO && state.toPlay === COLORS.RED);
+    (state.mode === MODES.SOLO
+      ? state.toPlay !== COLORS.RED
+      : Array.isArray(state.players) &&
+        state.players.length >= 2 &&
+        typeof state.localColorValue === "number" &&
+        state.localColorValue === state.toPlay);
 
   $: difficultyLabel =
     state && state.difficulty ? DIFFICULTY_LABELS[state.difficulty] : null;
@@ -155,7 +183,7 @@
   }
 </script>
 
-<main class="app">
+<main class="app" class:app--controls-collapsed={controlsCollapsed}>
   <header class="app__header">
     <div class="app__title-row">
       <h1>{appName}</h1>
@@ -192,6 +220,8 @@
         error={state.error}
         difficulty={state.mode === MODES.SOLO ? state.difficulty : null}
         aiDepth={state.aiDepth}
+        players={state.players}
+        localColor={state.localColorValue}
       />
     </div>
     <button type="button" class="status-bar__reset" on:click={handleReset}>
@@ -199,7 +229,7 @@
     </button>
   </div>
 
-  {#if state.mode === MODES.MULTIPLAYER}
+  {#if state.mode === MODES.MULTIPLAYER && !controlsCollapsed}
     <div class="player-avatars">
       {#each state.players as player, index}
         <div
@@ -216,13 +246,13 @@
           {/if}
         </div>
       {/each}
-      {#if state.players.length === 0}
-        <div class="player-avatar placeholder">Waiting for players…</div>
+      {#if state.players.length < 2}
+        <div class="player-avatar placeholder">Waiting for another player…</div>
       {/if}
     </div>
   {/if}
 
-  {#if state.mode === MODES.MULTIPLAYER}
+  {#if state.mode === MODES.MULTIPLAYER && !controlsCollapsed}
     <section class="multiplayer-meta">
       {#if state.gameId}
         <div class="invite-row">
@@ -256,6 +286,58 @@
           {/if}
         </p>
       {/if}
+
+      <section class="lobby-panel">
+        <div class="lobby-panel__header">
+          <h2>Waiting Room</h2>
+          <button
+            type="button"
+            class="lobby-panel__refresh"
+            on:click={refreshLobbyList}
+          >
+            Refresh
+          </button>
+        </div>
+        {#if state.lobbyLoading}
+          <p class="lobby-panel__status">Loading games…</p>
+        {:else if state.lobbyError}
+          <p class="lobby-panel__status lobby-panel__status--error">
+            {state.lobbyError}
+          </p>
+        {:else if !state.lobbyGames || state.lobbyGames.length === 0}
+          <p class="lobby-panel__status">No open games yet. Start one above!</p>
+        {:else}
+          <ul class="lobby-panel__list">
+            {#each state.lobbyGames as lobbyGame (lobbyGame.gameId)}
+              <li class="lobby-panel__item">
+                <div class="lobby-panel__info">
+                  <code class="lobby-panel__code" title={lobbyGame.gameId}
+                    >{lobbyGame.gameId}</code
+                  >
+                  <span
+                    class="lobby-panel__players"
+                    title={lobbyGame.players.length > 0
+                      ? lobbyGame.players.join(", ")
+                      : undefined}
+                  >
+                    {lobbyGame.players.length}/{lobbyGame.capacity} players
+                    {#if lobbyGame.players.length > 0}
+                      • {summarizePlayers(lobbyGame.players)}
+                    {/if}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  class="lobby-panel__join"
+                  on:click={() => handleJoinFromLobby(lobbyGame.gameId)}
+                >
+                  Join
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
     </section>
   {/if}
 </main>
@@ -265,6 +347,12 @@
     display: flex;
     flex-direction: column;
     gap: 2rem;
+  }
+
+  .app--controls-collapsed .app__sidebar,
+  .app--controls-collapsed .multiplayer-meta,
+  .app--controls-collapsed .player-avatars {
+    display: none !important;
   }
 
   .app__title-row {
@@ -433,6 +521,120 @@
     background: #ff5964;
   }
 
+  .lobby-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: rgba(9, 22, 47, 0.45);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  .lobby-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .lobby-panel__header h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .lobby-panel__refresh {
+    border: none;
+    border-radius: 999px;
+    padding: 0.35rem 0.85rem;
+    background: rgba(255, 255, 255, 0.9);
+    color: rgba(12, 26, 54, 0.85);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .lobby-panel__refresh:hover {
+    background: rgba(255, 255, 255, 0.98);
+  }
+
+  .lobby-panel__status {
+    margin: 0;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  .lobby-panel__status--error {
+    color: #ff7b7b;
+  }
+
+  .lobby-panel__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .lobby-panel__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.6rem 0.85rem;
+    background: rgba(11, 25, 52, 0.65);
+    border-radius: 0.85rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .lobby-panel__info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+  }
+
+  .lobby-panel__code {
+    display: inline-block;
+    max-width: 14rem;
+    padding: 0.15rem 0.55rem;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 0.65rem;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    font-family: var(--font-mono, "Fira Code", monospace);
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.95);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lobby-panel__players {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lobby-panel__join {
+    border: none;
+    border-radius: 999px;
+    padding: 0.35rem 0.85rem;
+    background: #ffd447;
+    color: rgba(12, 26, 54, 0.9);
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+  }
+
+  .lobby-panel__join:hover {
+    transform: translateY(-1px);
+  }
+
   .app__sidebar {
     display: flex;
     flex-direction: column;
@@ -496,6 +698,24 @@
 
     .hint {
       font-size: 0.85rem;
+    }
+
+    .lobby-panel {
+      padding: 0.85rem;
+    }
+
+    .lobby-panel__item {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.6rem;
+    }
+
+    .lobby-panel__code {
+      max-width: 100%;
+    }
+
+    .lobby-panel__join {
+      width: 100%;
     }
   }
 </style>

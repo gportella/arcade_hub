@@ -255,21 +255,22 @@
         rematchPending={state.rematchPending}
       />
     </div>
-      <button
-        type="button"
-        class="status-bar__reset"
-        on:click={state.mode === MODES.MULTIPLAYER ? handleRematch : handleReset}
-        disabled={
-          state.mode === MODES.MULTIPLAYER &&
-          (!state.gameId || state.rematchPending || !state.sessionReady || state.players.length < 2)
-        }
-      >
-        {state.mode === MODES.MULTIPLAYER
-          ? state.rematchPending
-            ? "Rematch Pending…"
-            : "Rematch"
-          : "Reset Board"}
-      </button>
+    <button
+      type="button"
+      class="status-bar__reset"
+      on:click={state.mode === MODES.MULTIPLAYER ? handleRematch : handleReset}
+      disabled={state.mode === MODES.MULTIPLAYER &&
+        (!state.gameId ||
+          state.rematchPending ||
+          !state.sessionReady ||
+          state.players.length < 2)}
+    >
+      {state.mode === MODES.MULTIPLAYER
+        ? state.rematchPending
+          ? "Rematch Pending…"
+          : "Rematch"
+        : "Reset Board"}
+    </button>
   </div>
 
   {#if state.mode === MODES.MULTIPLAYER && !controlsCollapsed}

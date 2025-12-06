@@ -170,11 +170,15 @@ async def get_game(game_id: str) -> GameDetailsResponse:
     response_model=GameDetailsResponse,
     tags=["games"],
 )
-async def request_rematch(game_id: str, payload: RematchRequest | None = None) -> GameDetailsResponse:
+async def request_rematch(
+    game_id: str, payload: RematchRequest | None = None
+) -> GameDetailsResponse:
     try:
         entry = await reset_session(game_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Game {game_id!r} not found") from exc
+        raise HTTPException(
+            status_code=404, detail=f"Game {game_id!r} not found"
+        ) from exc
 
     game = Connect4Game(mode=entry.mode, state=entry.board_state)
     session = entry.session

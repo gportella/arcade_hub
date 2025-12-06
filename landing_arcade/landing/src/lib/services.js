@@ -68,16 +68,18 @@ function createDefaultServices() {
             id: 'unblock',
             name: 'Unblock Me',
             description: 'Slide the blocks to free the target piece.',
-            url: import.meta.env.VITE_UNBLOCK_URL ?? 'http://localhost:9000',
-            healthUrl: import.meta.env.VITE_UNBLOCK_HEALTH ?? 'http://localhost:9000/health',
+            url: import.meta.env.VITE_UNBLOCK_URL ?? '/solve-parking',
+            healthUrl:
+                import.meta.env.VITE_UNBLOCK_HEALTH ?? '/solve-parking/health',
             tagline: pickRandom(SERVICE_TAGLINES.unblock),
         },
         {
             id: 'connect4',
             name: 'Connect 4 Arena',
             description: 'Challenge a friend or the AI to a round of Connect 4.',
-            url: import.meta.env.VITE_CONNECT4_URL ?? 'http://localhost:8180',
-            healthUrl: import.meta.env.VITE_CONNECT4_HEALTH ?? 'http://localhost:8100/health',
+            url: import.meta.env.VITE_CONNECT4_URL ?? '/connect4',
+            healthUrl:
+                import.meta.env.VITE_CONNECT4_HEALTH ?? '/connect4/api/health',
             tagline: pickRandom(SERVICE_TAGLINES.connect4),
         },
     ];

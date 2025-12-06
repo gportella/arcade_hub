@@ -72,7 +72,7 @@ services:
     container_name: solve-parking-backend
     restart: unless-stopped
     volumes:
-      - /home/guillem/container_services/solve_parking/puzzle_data:/app/backend/data
+      - /home/guillem/container_services/arcade_hub/solve_parking/puzzle_data:/app/backend/data
     networks:
       - solveparking
     labels:

@@ -68,7 +68,7 @@ function createDefaultServices() {
             id: 'unblock',
             name: 'Unblock Me',
             description: 'Slide the blocks to free the target piece.',
-            url: import.meta.env.VITE_UNBLOCK_URL ?? '/solve-parking',
+            url: import.meta.env.VITE_UNBLOCK_URL ?? '/solve-parking/',
             healthUrl:
                 import.meta.env.VITE_UNBLOCK_HEALTH ?? '/solve-parking/health',
             tagline: pickRandom(SERVICE_TAGLINES.unblock),
@@ -77,7 +77,7 @@ function createDefaultServices() {
             id: 'connect4',
             name: 'Connect 4 Arena',
             description: 'Challenge a friend or the AI to a round of Connect 4.',
-            url: import.meta.env.VITE_CONNECT4_URL ?? '/connect4',
+            url: import.meta.env.VITE_CONNECT4_URL ?? '/connect4/',
             healthUrl:
                 import.meta.env.VITE_CONNECT4_HEALTH ?? '/connect4/api/health',
             tagline: pickRandom(SERVICE_TAGLINES.connect4),

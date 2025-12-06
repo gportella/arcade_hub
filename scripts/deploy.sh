@@ -14,8 +14,8 @@ sudo podman-compose down || true
 echo "[deploy] Building images..."
 sudo podman-compose build
 
-echo "[deploy] Disabling Tailscale funnel on port 80..."
-sudo tailscale funnel --stop 80 || sudo tailscale funnel off || true
+echo "[deploy] Disabling Tailscale funnel..."
+sudo tailscale funnel off || true
 
 echo "[deploy] Starting stack..."
 sudo podman-compose up -d

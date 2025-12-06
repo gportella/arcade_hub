@@ -19,6 +19,50 @@ import {
 } from './logic.js';
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8000';
+const COLOR_NAME_TO_VALUE = {
+    yellow: COLORS.YELLOW,
+    red: COLORS.RED,
+};
+
+function updateGameQueryParam(gameId) {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    const url = new URL(window.location.href);
+    if (gameId) {
+        url.searchParams.set('game', gameId);
+    } else {
+        url.searchParams.delete('game');
+    }
+    window.history.replaceState({}, '', url.toString());
+    return url.toString();
+}
+
+function buildShareUrl(gameId) {
+    if (typeof window === 'undefined') {
+        return '';
+    }
+    const url = new URL(window.location.href);
+    if (gameId) {
+        url.searchParams.set('game', gameId);
+    } else {
+        url.searchParams.delete('game');
+    }
+    return url.toString();
+}
+
+function getGameIdFromUrl() {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    const url = new URL(window.location.href);
+    const value = url.searchParams.get('game');
+    if (!value) {
+        return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+}
 
 function resolveBackendBase() {
     const configured = import.meta.env.VITE_BACKEND_URL;
@@ -78,6 +122,9 @@ function createInitialState(mode = MODES.SOLO, difficulty = DEFAULT_DIFFICULTY) 
         connectionState: CONNECTION_STATES.DISCONNECTED,
         error: null,
         players: [],
+        playerColors: {},
+        localColor: null,
+        shareUrl: null,
         difficulty: resolvedDifficulty,
         aiDepth,
     };
@@ -170,17 +217,67 @@ function applyRemoteMove(state, payload) {
 
 function applyJoinEvent(state, payload) {
     const players = Array.from(new Set([...state.players, payload.playerId]));
+    const playerColors = { ...state.playerColors };
+    if (payload.color) {
+        playerColors[payload.playerId] = payload.color;
+    }
+    const localColor =
+        payload.playerId === state.playerId && payload.color
+            ? payload.color
+            : state.localColor;
     return {
         ...state,
         players,
+        playerColors,
+        localColor,
     };
 }
 
 function applyLeaveEvent(state, payload) {
     const players = state.players.filter((id) => id !== payload.playerId);
+    const playerColors = { ...state.playerColors };
+    delete playerColors[payload.playerId];
+    const localColor =
+        payload.playerId === state.playerId ? null : state.localColor;
     return {
         ...state,
         players,
+        playerColors,
+        localColor,
+    };
+}
+
+function applySessionState(state, payload) {
+    const players = Array.isArray(payload.players)
+        ? payload.players
+        : state.players;
+    const colorsPayload = payload.colors ?? {};
+    const playerColors = { ...state.playerColors };
+    for (const [playerId, colorName] of Object.entries(colorsPayload)) {
+        playerColors[playerId] = colorName;
+    }
+    let localColor = state.localColor;
+    if (state.playerId && colorsPayload[state.playerId]) {
+        localColor = colorsPayload[state.playerId];
+    }
+
+    let toPlay = state.toPlay;
+    if (typeof payload.currentTurn === 'string') {
+        const colorValue = COLOR_NAME_TO_VALUE[payload.currentTurn.toLowerCase()];
+        if (colorValue !== undefined) {
+            toPlay = colorValue;
+        }
+    }
+
+    const message = describeTurn(toPlay);
+
+    return {
+        ...state,
+        players,
+        playerColors,
+        localColor,
+        toPlay,
+        message,
     };
 }
 
@@ -249,12 +346,19 @@ function createGameStore() {
                 responseMode === MODES.SOLO
                     ? responseAiDepth ?? DIFFICULTY_DEPTH[resolvedDifficulty]
                     : null;
+            const shareUrl =
+                responseMode === MODES.MULTIPLAYER
+                    ? updateGameQueryParam(gameId)
+                    : updateGameQueryParam(null);
             update((state) => ({
                 ...state,
                 mode: responseMode,
                 gameId,
                 difficulty: resolvedDifficulty,
                 aiDepth: resolvedAiDepth,
+                shareUrl,
+                playerColors: {},
+                localColor: null,
             }));
             connect(gameId, playerId, responseMode);
         } catch (error) {
@@ -263,6 +367,56 @@ function createGameStore() {
                 ...state,
                 connectionState: CONNECTION_STATES.DISCONNECTED,
                 error: error instanceof Error ? error.message : String(error),
+            }));
+        }
+    }
+
+    async function joinGame(gameId) {
+        if (!gameId) {
+            return;
+        }
+        await disconnect();
+        const playerId = crypto.randomUUID();
+        set({
+            ...createInitialState(MODES.MULTIPLAYER, currentState.difficulty),
+            connectionState: CONNECTION_STATES.CONNECTING,
+            playerId,
+            gameId,
+        });
+
+        try {
+            const response = await fetch(`${BACKEND_BASE_URL}/games/${gameId}`);
+            if (!response.ok) {
+                throw new Error(
+                    response.status === 404
+                        ? 'Game not found'
+                        : `Failed to join game: ${response.statusText}`,
+                );
+            }
+            const details = await response.json();
+            if (details.mode !== MODES.MULTIPLAYER) {
+                throw new Error('Requested game is not running in multiplayer mode');
+            }
+
+            const shareUrl = updateGameQueryParam(gameId);
+
+            update((state) => ({
+                ...state,
+                mode: MODES.MULTIPLAYER,
+                gameId,
+                difficulty: state.difficulty,
+                aiDepth: null,
+                shareUrl,
+            }));
+
+            connect(gameId, playerId, MODES.MULTIPLAYER);
+        } catch (error) {
+            console.error('Failed to join game', error);
+            set((state) => ({
+                ...state,
+                connectionState: CONNECTION_STATES.DISCONNECTED,
+                error: error instanceof Error ? error.message : String(error),
+                shareUrl: buildShareUrl(gameId),
             }));
         }
     }
@@ -334,6 +488,8 @@ function createGameStore() {
 
         update((state) => {
             switch (payload.type) {
+                case 'session_state':
+                    return applySessionState(state, payload);
                 case 'player_joined':
                     return applyJoinEvent(state, payload);
                 case 'player_left':
@@ -386,6 +542,7 @@ function createGameStore() {
     return {
         subscribe,
         startNewGame,
+        joinGame,
         playColumn,
         reset,
     };
@@ -393,10 +550,22 @@ function createGameStore() {
 
 export const gameStore = createGameStore();
 
-// Auto-start a solo game when the store is created.
-gameStore.startNewGame(MODES.SOLO).catch((error) => {
-    console.error('Failed to initialise game', error);
-});
+if (typeof window !== 'undefined') {
+    const existingGameId = getGameIdFromUrl();
+    if (existingGameId) {
+        gameStore.joinGame(existingGameId).catch((error) => {
+            console.error('Failed to join game from URL', error);
+        });
+    } else {
+        gameStore.startNewGame(MODES.SOLO).catch((error) => {
+            console.error('Failed to initialise game', error);
+        });
+    }
+} else {
+    gameStore.startNewGame(MODES.SOLO).catch((error) => {
+        console.error('Failed to initialise game', error);
+    });
+}
 
 export function formatStatus(state) {
     if (state.error) {

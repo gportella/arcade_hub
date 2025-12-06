@@ -178,7 +178,7 @@ async def websocket_endpoint(
     game = Connect4Game(mode=entry.mode, state=entry.board_state)
     session = entry.session
     try:
-        await session.connect(player_id, websocket)
+        player_color = await session.connect(player_id, websocket)
     except SessionFullError:
         await websocket.close(code=1008, reason="Session is full")
         return
@@ -187,8 +187,23 @@ async def websocket_endpoint(
         "type": "player_joined",
         "gameId": game_id,
         "playerId": player_id,
+        "color": COLOR_NAMES[player_color],
     }
     await session.broadcast(join_payload, sender_id=player_id, include_sender=True)
+
+    await session.send_to(
+        player_id,
+        {
+            "type": "session_state",
+            "gameId": game_id,
+            "players": await session.player_ids(),
+            "colors": {
+                pid: COLOR_NAMES[color]
+                for pid, color in (await session.players_with_colors()).items()
+            },
+            "currentTurn": COLOR_NAMES[game.state.to_play],
+        },
+    )
 
     try:
         while True:
@@ -202,6 +217,7 @@ async def websocket_endpoint(
                     incoming,
                     websocket,
                     game,
+                    session,
                 )
                 if enriched is None:
                     continue
@@ -242,6 +258,7 @@ async def _handle_player_move(
     message: Dict[str, Any],
     websocket: WebSocket,
     game: Connect4Game,
+    session: GameSession,
 ) -> Dict[str, Any] | None:
     column = message.get("column")
     if not isinstance(column, int):
@@ -251,6 +268,18 @@ async def _handle_player_move(
                 "gameId": game_id,
                 "playerId": player_id,
                 "detail": "column must be provided as an integer",
+            }
+        )
+        return None
+
+    player_color = await session.color_for(player_id)
+    if player_color is not None and player_color != game.state.to_play:
+        await websocket.send_json(
+            {
+                "type": "error",
+                "gameId": game_id,
+                "playerId": player_id,
+                "detail": "Not your turn",
             }
         )
         return None

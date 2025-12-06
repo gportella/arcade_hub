@@ -5,6 +5,7 @@
     COLORS,
     DIFFICULTY_LABELS,
     DIFFICULTY_DEPTH,
+    COLOR_LABELS,
   } from "./lib/constants.js";
   import { gameStore } from "./lib/game/store.js";
   import ModeSwitcher from "./lib/components/ModeSwitcher.svelte";
@@ -47,12 +48,32 @@
 
   let appName = randomName();
   let controlsCollapsed = false;
+  let copyStatus = "";
+  let lastGameId = null;
 
   onMount(() => {
     document.title = appName;
   });
 
   $: state = $gameStore;
+
+  function colorLabelFromName(name) {
+    if (!name) {
+      return null;
+    }
+    const normalized = name.toLowerCase();
+    if (normalized === "yellow") {
+      return COLOR_LABELS[COLORS.YELLOW];
+    }
+    if (normalized === "red") {
+      return COLOR_LABELS[COLORS.RED];
+    }
+    return null;
+  }
+
+  function playerColorLabel(playerId) {
+    return colorLabelFromName(state?.playerColors?.[playerId]);
+  }
 
   function handleModeChange(mode) {
     const difficulty = state?.difficulty;
@@ -79,6 +100,39 @@
     controlsCollapsed = !controlsCollapsed;
   }
 
+  async function copyInviteLink() {
+    if (!state?.gameId) {
+      return;
+    }
+    const link =
+      state.shareUrl ??
+      (typeof window !== "undefined"
+        ? new URL(window.location.href).toString()
+        : state.gameId);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link);
+      } else {
+        const dummy = document.createElement("textarea");
+        dummy.value = link;
+        document.body.appendChild(dummy);
+        dummy.select();
+        document.execCommand("copy");
+        document.body.removeChild(dummy);
+      }
+      copyStatus = "Link copied!";
+      setTimeout(() => {
+        copyStatus = "";
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to copy invite link", error);
+      copyStatus = "Copy failed";
+      setTimeout(() => {
+        copyStatus = "";
+      }, 2000);
+    }
+  }
+
   $: isBoardInteractive =
     state &&
     !state.winner &&
@@ -94,6 +148,11 @@
       : state && state.difficulty
         ? DIFFICULTY_DEPTH[state.difficulty]
         : null;
+  $: localColorLabel = colorLabelFromName(state?.localColor);
+  $: if (state?.gameId !== lastGameId) {
+    lastGameId = state?.gameId ?? null;
+    copyStatus = "";
+  }
 </script>
 
 <main class="app">
@@ -143,15 +202,41 @@
   {#if state.mode === MODES.MULTIPLAYER}
     <div class="player-avatars">
       {#each state.players as player, index}
-        <div class="player-avatar">
+        <div
+          class={`player-avatar ${player === state.playerId ? "player-avatar--self" : ""}`}
+        >
           <span class="player-avatar__icon">{index === 0 ? "😎" : "🧢"}</span>
           <span class="player-avatar__name">{player}</span>
+          {#if playerColorLabel(player)}
+            <span
+              class={`player-avatar__color player-avatar__color--${playerColorLabel(player) === COLOR_LABELS[COLORS.YELLOW] ? "yellow" : "red"}`}
+            >
+              {playerColorLabel(player)}
+            </span>
+          {/if}
         </div>
       {/each}
       {#if state.players.length === 0}
         <div class="player-avatar placeholder">Waiting for players…</div>
       {/if}
     </div>
+  {/if}
+
+  {#if state.mode === MODES.MULTIPLAYER}
+    <section class="multiplayer-meta">
+      {#if state.gameId}
+        <div class="invite-row">
+          <span class="invite-label">Invite code</span>
+          <code class="invite-code">{state.gameId}</code>
+          <button type="button" class="invite-copy" on:click={copyInviteLink}>
+            {copyStatus || "Copy Link"}
+          </button>
+        </div>
+      {/if}
+      {#if localColorLabel}
+        <p class="color-note">You are playing as {localColorLabel}.</p>
+      {/if}
+    </section>
   {/if}
 
   {#if !controlsCollapsed}
@@ -245,6 +330,109 @@
     box-shadow: none;
   }
 
+  .multiplayer-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .invite-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .invite-label {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .invite-code {
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    font-family: var(--font-mono, "Fira Code", monospace);
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .invite-copy {
+    border: none;
+    border-radius: 999px;
+    padding: 0.4rem 0.9rem;
+    background: rgba(255, 255, 255, 0.92);
+    color: rgba(12, 26, 54, 0.85);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .invite-copy:hover {
+    background: rgba(255, 255, 255, 0.98);
+  }
+
+  .color-note {
+    margin: 0;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  .player-avatars {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .player-avatar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.45rem 0.75rem;
+    background: rgba(9, 22, 47, 0.6);
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.2);
+  }
+
+  .player-avatar--self {
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(17, 40, 82, 0.75);
+  }
+
+  .player-avatar.placeholder {
+    color: rgba(255, 255, 255, 0.6);
+    font-style: italic;
+  }
+
+  .player-avatar__icon {
+    font-size: 1.25rem;
+  }
+
+  .player-avatar__name {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .player-avatar__color {
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: rgba(10, 24, 52, 0.85);
+  }
+
+  .player-avatar__color--yellow {
+    background: #ffd447;
+  }
+
+  .player-avatar__color--red {
+    background: #ff5964;
+  }
+
   .app__sidebar {
     display: flex;
     flex-direction: column;
@@ -283,6 +471,22 @@
     .controls-toggle {
       font-size: 0.85rem;
       padding: 0.35rem 0.85rem;
+    }
+
+    .player-avatars {
+      gap: 0.5rem;
+    }
+
+    .invite-row {
+      gap: 0.35rem;
+    }
+
+    .invite-code {
+      font-size: 0.8rem;
+    }
+
+    .color-note {
+      font-size: 0.8rem;
     }
 
     .app__sidebar {

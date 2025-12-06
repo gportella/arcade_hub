@@ -10,7 +10,7 @@ from typing import Any, Dict, Mapping
 
 from fastapi import WebSocket
 
-from src.connect4.datamodel import BitboardState
+from src.connect4.datamodel import BitboardState, Color, YELLOW, other_color
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,16 @@ def _default_ai_depth() -> int:
     return DIFFICULTY_DEPTH[DEFAULT_DIFFICULTY]
 
 
+_next_starting_color: Color = YELLOW
+
+
+def _cycle_starting_color() -> Color:
+    global _next_starting_color
+    current = _next_starting_color
+    _next_starting_color = other_color(current)
+    return current
+
+
 class SessionFullError(Exception):
     """Raised when attempting to join a full session."""
 
@@ -77,32 +87,56 @@ class SessionRegistryEntry:
 
     mode: GameMode
     session: "GameSession"
-    board_state: BitboardState = field(default_factory=BitboardState)
+    board_state: BitboardState
     difficulty: DifficultyLevel = DEFAULT_DIFFICULTY
     ai_depth: int = field(default_factory=_default_ai_depth)
+    starting_color: Color = YELLOW
 
 
 class GameSession:
     """In-memory session manager for a single Connect 4 match."""
 
-    def __init__(self, mode: GameMode, *, capacity: int | None = None) -> None:
+    def __init__(
+        self,
+        mode: GameMode,
+        *,
+        capacity: int | None = None,
+        starting_color: Color = YELLOW,
+    ) -> None:
         self.mode = mode
         self._capacity = capacity or (1 if mode is GameMode.SOLO else 2)
         self._players: Dict[str, WebSocket] = {}
+        self._player_colors: Dict[str, Color] = {}
+        self._color_slots: Dict[Color, str | None] = {
+            starting_color: None,
+            other_color(starting_color): None,
+        }
         self._lock = asyncio.Lock()
 
     @property
     def capacity(self) -> int:
         return self._capacity
 
-    async def connect(self, player_id: str, websocket: WebSocket) -> None:
+    async def connect(self, player_id: str, websocket: WebSocket) -> Color:
         close_previous: WebSocket | None = None
+        assigned_color: Color | None = None
         async with self._lock:
             existing = self._players.get(player_id)
             if existing is None and len(self._players) >= self._capacity:
                 raise SessionFullError()
             if existing is not None and existing is not websocket:
                 close_previous = existing
+            if player_id in self._player_colors:
+                assigned_color = self._player_colors[player_id]
+            else:
+                for color, occupant in self._color_slots.items():
+                    if occupant is None:
+                        self._color_slots[color] = player_id
+                        assigned_color = color
+                        break
+                if assigned_color is None:
+                    raise SessionFullError()
+                self._player_colors[player_id] = assigned_color
             self._players[player_id] = websocket
             logger.debug("Player %s joined session", player_id)
 
@@ -110,12 +144,17 @@ class GameSession:
             await close_previous.close(code=1012)
 
         await websocket.accept()
+        return assigned_color if assigned_color is not None else YELLOW
 
     async def disconnect(self, player_id: str) -> None:
         async with self._lock:
             if player_id in self._players:
                 self._players.pop(player_id)
                 logger.debug("Player %s left session", player_id)
+            if player_id in self._player_colors:
+                color = self._player_colors.pop(player_id)
+                if self._color_slots.get(color) == player_id:
+                    self._color_slots[color] = None
 
     async def send_to(self, player_id: str, message: Mapping[str, Any]) -> None:
         async with self._lock:
@@ -157,6 +196,14 @@ class GameSession:
         async with self._lock:
             return list(self._players.keys())
 
+    async def color_for(self, player_id: str) -> Color | None:
+        async with self._lock:
+            return self._player_colors.get(player_id)
+
+    async def players_with_colors(self) -> Dict[str, Color]:
+        async with self._lock:
+            return dict(self._player_colors)
+
 
 sessions: Dict[str, SessionRegistryEntry] = {}
 sessions_lock = asyncio.Lock()
@@ -171,11 +218,17 @@ async def create_session(
         if game_id in sessions:
             raise SessionAlreadyExistsError(game_id)
         chosen_difficulty = difficulty or DEFAULT_DIFFICULTY
+        starting_color = (
+            _cycle_starting_color() if mode is GameMode.MULTIPLAYER else YELLOW
+        )
+        board_state = BitboardState(to_play=starting_color)
         entry = SessionRegistryEntry(
             mode=mode,
-            session=GameSession(mode),
+            session=GameSession(mode, starting_color=starting_color),
+            board_state=board_state,
             difficulty=chosen_difficulty,
             ai_depth=DIFFICULTY_DEPTH[chosen_difficulty],
+            starting_color=starting_color,
         )
         sessions[game_id] = entry
         return entry
@@ -195,11 +248,17 @@ async def get_session(
                 raise KeyError(game_id)
             new_mode = mode or GameMode.MULTIPLAYER
             chosen_difficulty = difficulty or DEFAULT_DIFFICULTY
+            starting_color = (
+                _cycle_starting_color() if new_mode is GameMode.MULTIPLAYER else YELLOW
+            )
+            board_state = BitboardState(to_play=starting_color)
             entry = SessionRegistryEntry(
                 mode=new_mode,
-                session=GameSession(new_mode),
+                session=GameSession(new_mode, starting_color=starting_color),
+                board_state=board_state,
                 difficulty=chosen_difficulty,
                 ai_depth=DIFFICULTY_DEPTH[chosen_difficulty],
+                starting_color=starting_color,
             )
             sessions[game_id] = entry
         elif mode is not None and entry.mode is not mode:

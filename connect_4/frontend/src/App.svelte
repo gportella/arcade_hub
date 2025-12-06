@@ -91,10 +91,31 @@
     gameStore.reset();
   }
 
+  function handleRematch() {
+    gameStore
+      .requestRematch()
+      .catch((error) => console.error("Failed to request rematch", error));
+  }
+
   function handleDifficultyChange(difficulty) {
     gameStore
       .startNewGame(MODES.SOLO, difficulty)
       .catch((error) => console.error("Failed to change difficulty", error));
+  }
+
+  function handleTitleLinkClick(event) {
+    event?.preventDefault?.();
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("game");
+      const updated = `${url.origin}${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState({}, "", updated);
+      window.location.reload();
+    } else {
+      gameStore
+        .startNewGame(MODES.SOLO)
+        .catch((error) => console.error("Failed to refresh game", error));
+    }
   }
 
   function toggleControls() {
@@ -186,7 +207,15 @@
 <main class="app" class:app--controls-collapsed={controlsCollapsed}>
   <header class="app__header">
     <div class="app__title-row">
-      <h1>{appName}</h1>
+      <h1>
+        <a
+          href="#refresh"
+          class="app__title-link"
+          on:click={handleTitleLinkClick}
+        >
+          {appName}
+        </a>
+      </h1>
       <button
         type="button"
         class="controls-toggle"
@@ -222,11 +251,25 @@
         aiDepth={state.aiDepth}
         players={state.players}
         localColor={state.localColorValue}
+        opponentDisconnected={state.opponentDisconnected}
+        rematchPending={state.rematchPending}
       />
     </div>
-    <button type="button" class="status-bar__reset" on:click={handleReset}>
-      Reset Board
-    </button>
+      <button
+        type="button"
+        class="status-bar__reset"
+        on:click={state.mode === MODES.MULTIPLAYER ? handleRematch : handleReset}
+        disabled={
+          state.mode === MODES.MULTIPLAYER &&
+          (!state.gameId || state.rematchPending || !state.sessionReady || state.players.length < 2)
+        }
+      >
+        {state.mode === MODES.MULTIPLAYER
+          ? state.rematchPending
+            ? "Rematch Pending…"
+            : "Rematch"
+          : "Reset Board"}
+      </button>
   </div>
 
   {#if state.mode === MODES.MULTIPLAYER && !controlsCollapsed}
@@ -247,7 +290,11 @@
         </div>
       {/each}
       {#if state.players.length < 2}
-        <div class="player-avatar placeholder">Waiting for another player…</div>
+        <div class="player-avatar placeholder">
+          {state.hadOpponent
+            ? "Opponent disconnected. Waiting…"
+            : "Waiting for another player…"}
+        </div>
       {/if}
     </div>
   {/if}
@@ -265,6 +312,14 @@
       {/if}
       {#if localColorLabel}
         <p class="color-note">You are playing as {localColorLabel}.</p>
+      {/if}
+      {#if state.opponentDisconnected}
+        <p class="disconnect-note">
+          Opponent disconnected. Waiting for them to rejoin.
+        </p>
+      {/if}
+      {#if state.rematchPending}
+        <p class="rematch-note">Rematch requested… waiting for players.</p>
       {/if}
     </section>
   {/if}
@@ -367,6 +422,17 @@
     font-size: clamp(2.25rem, 2.5vw + 1.5rem, 3rem);
   }
 
+  .app__title-link {
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .app__title-link:hover,
+  .app__title-link:focus {
+    text-decoration: underline;
+  }
+
   .controls-toggle {
     border: none;
     border-radius: 999px;
@@ -418,6 +484,13 @@
     box-shadow: none;
   }
 
+  .status-bar__reset:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+
   .multiplayer-meta {
     display: flex;
     flex-direction: column;
@@ -462,6 +535,19 @@
   }
 
   .color-note {
+    margin: 0;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.75);
+  }
+
+  .disconnect-note {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #ffb347;
+    font-weight: 600;
+  }
+
+  .rematch-note {
     margin: 0;
     font-size: 0.9rem;
     color: rgba(255, 255, 255, 0.75);
@@ -688,6 +774,10 @@
     }
 
     .color-note {
+      font-size: 0.8rem;
+    }
+
+    .disconnect-note {
       font-size: 0.8rem;
     }
 

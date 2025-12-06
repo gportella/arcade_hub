@@ -21,6 +21,7 @@ from .sessions import (
     create_session,
     discard_session,
     get_session,
+    reset_session,
     snapshot_sessions,
 )
 from .sessions import GameSession, SessionRegistryEntry
@@ -65,6 +66,14 @@ class GameDetailsResponse(BaseModel):
     capacity: int
     difficulty: DifficultyLevel
     ai_depth: int
+
+
+class RematchRequest(BaseModel):
+    """Request body for rematch operations."""
+
+    player_id: str | None = Field(default=None, alias="playerId")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 @router.get("/health", tags=["system"])
@@ -146,6 +155,43 @@ async def get_game(game_id: str) -> GameDetailsResponse:
         ) from exc
 
     players = await entry.session.player_ids()
+    return GameDetailsResponse(
+        game_id=game_id,
+        mode=entry.mode,
+        players=players,
+        capacity=entry.session.capacity,
+        difficulty=entry.difficulty,
+        ai_depth=entry.ai_depth,
+    )
+
+
+@router.post(
+    "/games/{game_id}/rematch",
+    response_model=GameDetailsResponse,
+    tags=["games"],
+)
+async def request_rematch(game_id: str, payload: RematchRequest | None = None) -> GameDetailsResponse:
+    try:
+        entry = await reset_session(game_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Game {game_id!r} not found") from exc
+
+    game = Connect4Game(mode=entry.mode, state=entry.board_state)
+    session = entry.session
+    initiator = payload.player_id if payload else None
+
+    rematch_payload: Dict[str, Any] = {
+        "type": "rematch",
+        "gameId": game_id,
+        "startingColor": COLOR_NAMES[game.state.to_play],
+    }
+    if initiator:
+        rematch_payload["initiatedBy"] = initiator
+
+    await session.broadcast(rematch_payload, sender_id=None, include_sender=True)
+    await _broadcast_session_state(game_id, session, game)
+
+    players = await session.player_ids()
     return GameDetailsResponse(
         game_id=game_id,
         mode=entry.mode,
@@ -298,6 +344,7 @@ async def _handle_player_move(
         player_id=player_id,
         message_type=message_type,
         outcome=outcome,
+        turn_index=game.state.move_count,
         extra=extra,
     )
 
@@ -373,6 +420,7 @@ async def _maybe_trigger_ai_turn(
         player_id=ENGINE_PLAYER_ID,
         message_type="ai_move",
         outcome=outcome,
+        turn_index=game.state.move_count,
     )
 
     await session.broadcast(payload, sender_id=None, include_sender=True)
@@ -384,6 +432,7 @@ def _build_move_payload(
     player_id: str,
     message_type: str,
     outcome: "TurnOutcome",
+    turn_index: int | None = None,
     extra: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
@@ -393,7 +442,7 @@ def _build_move_payload(
         "column": outcome.result.column,
         "color": outcome.player,
         "colorName": outcome.player_name,
-        "turnIndex": outcome.turn_index,
+        "turnIndex": turn_index if turn_index is not None else outcome.turn_index,
         "bit": outcome.result.bit,
         "winner": outcome.result.winner,
         "draw": outcome.result.draw,

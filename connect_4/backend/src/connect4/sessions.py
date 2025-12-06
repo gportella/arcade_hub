@@ -285,6 +285,29 @@ async def discard_session(game_id: str, session: GameSession) -> None:
             logger.debug("Removed empty session for game %s", game_id)
 
 
+async def reset_session(game_id: str) -> SessionRegistryEntry:
+    async with sessions_lock:
+        entry = sessions.get(game_id)
+        if entry is None:
+            raise KeyError(game_id)
+
+        if entry.mode is GameMode.MULTIPLAYER:
+            starting_color = other_color(entry.starting_color)
+        else:
+            starting_color = YELLOW
+
+        state = entry.board_state
+        state._boards[0] = 0
+        state._boards[1] = 0
+        state.mask = 0
+        state.move_count = 0
+        state._last_result = None
+        state.to_play = starting_color
+
+        entry.starting_color = starting_color
+        return entry
+
+
 async def snapshot_sessions() -> list[tuple[str, SessionRegistryEntry]]:
     async with sessions_lock:
         return list(sessions.items())
@@ -303,5 +326,6 @@ __all__ = [
     "create_session",
     "discard_session",
     "get_session",
+    "reset_session",
     "snapshot_sessions",
 ]

@@ -136,6 +136,9 @@ function createInitialState(mode = MODES.SOLO, difficulty = DEFAULT_DIFFICULTY) 
         lobbyLoading: false,
         lobbyError: null,
         sessionReady: false,
+        hadOpponent: false,
+        opponentDisconnected: false,
+        rematchPending: false,
     };
 }
 
@@ -240,12 +243,16 @@ function applyJoinEvent(state, payload) {
         payload.playerId === state.playerId && colorName
             ? COLOR_NAME_TO_VALUE[colorName.toLowerCase()] ?? state.localColorValue
             : state.localColorValue;
+    const hadOpponent = state.hadOpponent || players.length >= 2;
+    const opponentDisconnected = players.length >= 2 ? false : state.opponentDisconnected;
     return {
         ...state,
         players,
         playerColors,
         localColor,
         localColorValue,
+        hadOpponent,
+        opponentDisconnected,
     };
 }
 
@@ -257,12 +264,18 @@ function applyLeaveEvent(state, payload) {
         payload.playerId === state.playerId ? null : state.localColor;
     const localColorValue =
         payload.playerId === state.playerId ? null : state.localColorValue;
+    const previouslyHadOpponent = state.hadOpponent || state.players.length >= 2;
+    const hadOpponent = state.hadOpponent || previouslyHadOpponent;
+    const opponentDisconnected =
+        hadOpponent && payload.playerId !== state.playerId && players.length < 2;
     return {
         ...state,
         players,
         playerColors,
         localColor,
         localColorValue,
+        hadOpponent,
+        opponentDisconnected,
     };
 }
 
@@ -294,6 +307,9 @@ function applySessionState(state, payload) {
 
     const waitingForOpponent =
         state.mode === MODES.MULTIPLAYER && players.length < 2;
+    const hadOpponent = state.hadOpponent || players.length >= 2;
+    const opponentDisconnected =
+        state.mode === MODES.MULTIPLAYER && hadOpponent && players.length < 2;
     const message = waitingForOpponent ? 'Waiting for another player…' : describeTurn(toPlay);
 
     return {
@@ -306,6 +322,39 @@ function applySessionState(state, payload) {
         message,
         sessionReady: true,
         error: null,
+        hadOpponent,
+        opponentDisconnected,
+        rematchPending: false,
+    };
+}
+
+function applyRematch(state, payload) {
+    const colorName =
+        typeof payload.startingColor === 'string'
+            ? payload.startingColor.toLowerCase()
+            : 'yellow';
+    const startingColor = COLOR_NAME_TO_VALUE[colorName] ?? COLORS.YELLOW;
+    const board = createEmptyBoard();
+    const playableColumns = listPlayableColumns(board);
+    const hadOpponent =
+        state.hadOpponent ||
+        (Array.isArray(state.players) ? state.players.length >= 2 : false);
+
+    return {
+        ...state,
+        board,
+        playableColumns,
+        toPlay: startingColor,
+        lastMove: null,
+        winner: null,
+        draw: false,
+        moveCount: 0,
+        message: describeTurn(startingColor),
+        sessionReady: false,
+        error: null,
+        opponentDisconnected: false,
+        hadOpponent,
+        rematchPending: false,
     };
 }
 
@@ -321,9 +370,11 @@ function createGameStore() {
     /** @type {WebSocket | null} */
     let socket = null;
 
-    async function startNewGame(mode, difficulty) {
+    async function startNewGame(mode, difficulty, options = {}) {
+        const { reuseGameId = false, existingGameId = null, playerIdOverride = null } =
+            options;
         await disconnect();
-        const playerId = crypto.randomUUID();
+        const playerId = playerIdOverride ?? crypto.randomUUID();
         const desiredDifficulty =
             mode === MODES.SOLO
                 ? difficulty ?? currentState.difficulty ?? DEFAULT_DIFFICULTY
@@ -334,14 +385,17 @@ function createGameStore() {
             playerId,
             difficulty: desiredDifficulty,
         });
-        set({
-            ...createInitialState(mode, desiredDifficulty),
-            connectionState: CONNECTION_STATES.CONNECTING,
-            playerId,
-            lobbyGames: currentState.lobbyGames,
-            lobbyLoading: currentState.lobbyLoading,
-            lobbyError: currentState.lobbyError,
-        });
+        if (!reuseGameId) {
+            set({
+                ...createInitialState(mode, desiredDifficulty),
+                connectionState: CONNECTION_STATES.CONNECTING,
+                playerId,
+                lobbyGames: currentState.lobbyGames,
+                lobbyLoading: currentState.lobbyLoading,
+                lobbyError: currentState.lobbyError,
+                rematchPending: false,
+            });
+        }
 
         try {
             const payload = { mode };
@@ -349,11 +403,22 @@ function createGameStore() {
                 payload.difficulty = desiredDifficulty;
             }
 
-            const response = await fetch(`${BACKEND_BASE_URL}/games`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
+            let response;
+            if (reuseGameId && existingGameId) {
+                response = await fetch(`${BACKEND_BASE_URL}/games/${existingGameId}`);
+                if (response.status === 404) {
+                    // fall back to creating a brand-new game if the session vanished
+                    response = null;
+                }
+            }
+
+            if (!response) {
+                response = await fetch(`${BACKEND_BASE_URL}/games`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+            }
             if (!response.ok) {
                 throw new Error(`Failed to create game: ${response.statusText}`);
             }
@@ -379,7 +444,9 @@ function createGameStore() {
                     : null;
             const shareUrl =
                 responseMode === MODES.MULTIPLAYER
-                    ? updateGameQueryParam(gameId)
+                    ? reuseGameId && existingGameId
+                        ? buildShareUrl(existingGameId)
+                        : updateGameQueryParam(gameId)
                     : updateGameQueryParam(null);
             update((state) => ({
                 ...state,
@@ -392,6 +459,9 @@ function createGameStore() {
                 localColor: null,
                 localColorValue: null,
                 sessionReady: false,
+                hadOpponent: false,
+                opponentDisconnected: false,
+                rematchPending: false,
             }));
             connect(gameId, playerId, responseMode);
             refreshLobby().catch((refreshError) => {
@@ -403,6 +473,9 @@ function createGameStore() {
                 ...state,
                 connectionState: CONNECTION_STATES.DISCONNECTED,
                 error: error instanceof Error ? error.message : String(error),
+                opponentDisconnected: false,
+                hadOpponent: false,
+                rematchPending: false,
             }));
         }
     }
@@ -447,6 +520,9 @@ function createGameStore() {
                 aiDepth: null,
                 shareUrl,
                 sessionReady: false,
+                hadOpponent: state.hadOpponent,
+                opponentDisconnected: false,
+                rematchPending: false,
             }));
 
             connect(gameId, playerId, MODES.MULTIPLAYER);
@@ -460,6 +536,8 @@ function createGameStore() {
                 connectionState: CONNECTION_STATES.DISCONNECTED,
                 error: error instanceof Error ? error.message : String(error),
                 shareUrl: buildShareUrl(gameId),
+                opponentDisconnected: false,
+                rematchPending: false,
             }));
             refreshLobby().catch((refreshError) => {
                 console.debug('gameStore:joinGame:lobby-refresh-failed', refreshError);
@@ -488,6 +566,8 @@ function createGameStore() {
                 playerId,
                 error: null,
                 sessionReady: false,
+                opponentDisconnected: false,
+                rematchPending: state.rematchPending,
             }));
         });
 
@@ -508,6 +588,7 @@ function createGameStore() {
                 ...state,
                 connectionState: CONNECTION_STATES.CLOSED,
                 sessionReady: false,
+                rematchPending: false,
             }));
         });
 
@@ -517,6 +598,7 @@ function createGameStore() {
                 ...state,
                 error: 'WebSocket error occurred',
                 sessionReady: false,
+                rematchPending: false,
             }));
         });
     }
@@ -537,6 +619,8 @@ function createGameStore() {
 
         update((state) => {
             switch (payload.type) {
+                case 'rematch':
+                    return applyRematch(state, payload);
                 case 'session_state':
                     return applySessionState(state, payload);
                 case 'player_joined':
@@ -656,9 +740,51 @@ function createGameStore() {
         }
     }
 
+    async function requestRematch() {
+        if (currentState.mode !== MODES.MULTIPLAYER || !currentState.gameId) {
+            return;
+        }
+        if (currentState.rematchPending) {
+            return;
+        }
+
+        update((state) => ({
+            ...state,
+            rematchPending: true,
+            error: null,
+        }));
+
+        try {
+            const response = await fetch(
+                `${BACKEND_BASE_URL}/games/${currentState.gameId}/rematch`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ playerId: currentState.playerId }),
+                },
+            );
+            if (!response.ok) {
+                throw new Error(`Failed to request rematch: ${response.statusText}`);
+            }
+        } catch (error) {
+            update((state) => ({
+                ...state,
+                rematchPending: false,
+                error: error instanceof Error ? error.message : String(error),
+            }));
+            throw error;
+        }
+    }
+
     function reset() {
         const mode = currentState.mode;
         const difficulty = currentState.difficulty;
+        if (mode === MODES.MULTIPLAYER && currentState.gameId) {
+            requestRematch().catch((error) => {
+                console.error('Failed to request rematch', error);
+            });
+            return;
+        }
         startNewGame(mode, difficulty).catch((error) => {
             console.error('Failed to reset game', error);
         });
@@ -670,6 +796,7 @@ function createGameStore() {
         joinGame,
         playColumn,
         reset,
+        requestRematch,
         refreshLobby,
     };
 }
@@ -702,6 +829,12 @@ export function formatStatus(state) {
     }
     if (state.connectionState !== CONNECTION_STATES.CONNECTED) {
         return 'Connecting…';
+    }
+    if (state.mode === MODES.MULTIPLAYER && state.rematchPending) {
+        return 'Rematch requested…';
+    }
+    if (state.mode === MODES.MULTIPLAYER && state.opponentDisconnected) {
+        return 'Opponent disconnected. Waiting for reconnection…';
     }
     if (
         state.mode === MODES.MULTIPLAYER &&

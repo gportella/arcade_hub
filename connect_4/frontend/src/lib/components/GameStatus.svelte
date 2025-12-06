@@ -18,6 +18,8 @@
     export let aiDepth = null;
     export let players = [];
     export let localColor = null;
+    export let opponentDisconnected = false;
+    export let rematchPending = false;
 
     $: summary = (() => {
         if (error) {
@@ -34,6 +36,12 @@
         }
         if (mode === MODES.MULTIPLAYER) {
             const playerCount = Array.isArray(players) ? players.length : 0;
+            if (rematchPending) {
+                return "Rematch requested…";
+            }
+            if (opponentDisconnected && playerCount < 2) {
+                return "Opponent disconnected. Waiting for reconnection…";
+            }
             if (playerCount < 2) {
                 return "Waiting for another player…";
             }

@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: connect4-backend:latest
+    container_name: connect4-backend
+    restart: unless-stopped
+    ports:
+      - "${CONNECT4_BACKEND_PORT:-8100}:8000"
+    volumes:
+      - /home/guillem/container_services/connect4/data:/app/backend/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CONNECT4_DB_URL=sqlite:////app/backend/data/connect4.db
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_URL: "/api"
+    image: connect4-frontend:latest
+    container_name: connect4-frontend
+    depends_on:
+      - backend
+    restart: unless-stopped
+    ports:
+      - "${CONNECT4_FRONTEND_PORT:-8180}:80"
+
+  landing:
+    build:
+      context: ./landing
+      dockerfile: Dockerfile
+    image: arcade-landing:latest
+    container_name: arcade-landing
+    restart: unless-stopped
+    ports:
+      - "${ARCADE_LANDING_PORT:-8200}:80"

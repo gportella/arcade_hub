@@ -1,0 +1,121 @@
+version: "3.9"
+
+networks:
+  web:
+    name: arcade_web
+  connect4:
+  solveparking:
+
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: arcade-traefik
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    networks:
+      - web
+
+  connect4-backend:
+    build:
+      context: ./connect_4/backend
+      dockerfile: Dockerfile
+    image: arcade-connect4-backend:latest
+    container_name: connect4-backend
+    restart: unless-stopped
+    volumes:
+      - /home/guillem/container_services/connect_4/data:/app/backend/data
+    environment:
+      - CONNECT4_DB_URL=sqlite:////app/backend/data/connect4.db
+    networks:
+      connect4:
+        aliases:
+          - backend
+    labels:
+      - traefik.enable=false
+
+  connect4-frontend:
+    build:
+      context: ./connect_4/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_URL: /api
+    image: arcade-connect4-frontend:latest
+    container_name: connect4-frontend
+    depends_on:
+      - connect4-backend
+    restart: unless-stopped
+    networks:
+      - web
+      - connect4
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.connect4.rule=PathPrefix(`/connect4`)
+      - traefik.http.routers.connect4.priority=100
+      - traefik.http.routers.connect4.entrypoints=web
+      - traefik.http.routers.connect4.middlewares=connect4-strip
+      - traefik.http.services.connect4.loadbalancer.server.port=80
+      - traefik.http.middlewares.connect4-strip.stripprefix.prefixes=/connect4
+
+  solve-parking-backend:
+    build:
+      context: ./solve_parking/backend
+      dockerfile: Dockerfile
+    image: arcade-solve-parking-backend:latest
+    container_name: solve-parking-backend
+    restart: unless-stopped
+    volumes:
+      - /home/guillem/container_services/solve_parking/puzzle_data:/app/backend/data
+    networks:
+      solveparking:
+        aliases:
+          - backend
+    labels:
+      - traefik.enable=false
+
+  solve-parking-frontend:
+    build:
+      context: ./solve_parking/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: /api
+    image: arcade-solve-parking-frontend:latest
+    container_name: solve-parking-frontend
+    depends_on:
+      - solve-parking-backend
+    restart: unless-stopped
+    networks:
+      - web
+      - solveparking
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.solveparking.rule=PathPrefix(`/solve-parking`)
+      - traefik.http.routers.solveparking.priority=100
+      - traefik.http.routers.solveparking.entrypoints=web
+      - traefik.http.routers.solveparking.middlewares=solveparking-strip
+      - traefik.http.services.solveparking.loadbalancer.server.port=80
+      - traefik.http.middlewares.solveparking-strip.stripprefix.prefixes=/solve-parking
+
+  landing:
+    build:
+      context: ./landing_arcade/landing
+      dockerfile: Dockerfile
+    image: arcade-landing:latest
+    container_name: arcade-landing
+    restart: unless-stopped
+    networks:
+      - web
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.landing.rule=PathPrefix(`/`)
+      - traefik.http.routers.landing.priority=1
+      - traefik.http.routers.landing.entrypoints=web
+      - traefik.http.services.landing.loadbalancer.server.port=80

@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: solve-parking-backend:latest
+    container_name: solve-parking-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - /home/guillem/container_services/solve_parking/puzzle_data:/app/backend/data
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: /api
+    image: solve-parking-frontend:latest
+    container_name: solve-parking-frontend
+    depends_on:
+      - backend
+    restart: unless-stopped
+    ports:
+      - "8080:80"

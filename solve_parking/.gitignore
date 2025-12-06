@@ -1,0 +1,15 @@
+# Node
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+
+# Python
+backend/.uv/
+backend/.venv/
+__pycache__/
+*.py[cod]
+
+# Editor
+.vscode/
+.DS_Store
+.github/

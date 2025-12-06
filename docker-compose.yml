@@ -36,9 +36,7 @@ services:
     environment:
       - CONNECT4_DB_URL=sqlite:////app/backend/data/connect4.db
     networks:
-      connect4:
-        aliases:
-          - backend
+      - connect4
     labels:
       - traefik.enable=false
 
@@ -75,9 +73,7 @@ services:
     volumes:
       - /home/guillem/container_services/solve_parking/puzzle_data:/app/backend/data
     networks:
-      solveparking:
-        aliases:
-          - backend
+      - solveparking
     labels:
       - traefik.enable=false
 

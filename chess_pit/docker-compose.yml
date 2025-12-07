@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  chess-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: arcade-chess-backend:latest
+    container_name: chess-backend
+    restart: unless-stopped
+    environment:
+      - CHESS_DATABASE_URL=sqlite:////app/backend/data/chess.db
+    volumes:
+      - ./backend/data:/app/backend/data
+    ports:
+      - "8082:8000"

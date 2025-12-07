@@ -5,6 +5,7 @@ networks:
     name: arcade_web
   connect4:
   solveparking:
+  chesspit:
 
 services:
   traefik:
@@ -101,6 +102,22 @@ services:
       - traefik.http.routers.solveparking.middlewares=solveparking-strip
       - traefik.http.services.solveparking.loadbalancer.server.port=80
       - traefik.http.middlewares.solveparking-strip.stripprefix.prefixes=/solve-parking
+
+  chess-backend:
+    build:
+      context: ./chess_pit/backend
+      dockerfile: Dockerfile
+    image: arcade-chess-backend:latest
+    container_name: chess-backend
+    restart: unless-stopped
+    environment:
+      - CHESS_DATABASE_URL=sqlite:////app/backend/data/chess.db
+    volumes:
+      - /home/guillem/container_services/arcade_hub/chess_pit/data:/app/backend/data
+    networks:
+      - chesspit
+    labels:
+      - traefik.enable=false
 
   landing:
     build:

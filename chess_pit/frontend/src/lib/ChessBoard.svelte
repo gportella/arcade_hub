@@ -55,6 +55,8 @@
     export let onMove = (_detail) => {};
     export let onUndo = (_detail) => {};
     export let onReset = (_detail) => {};
+    export let showStatus = true;
+    export let showControls = true;
 
     function initialiseGame() {
         if (startingFen) {
@@ -269,7 +271,7 @@
     }
 </script>
 
-<section class="chess-widget">
+<section class="chess-widget" class:compact={!showStatus && !showControls}>
     <div class="board" aria-label="Chess board">
         <Chessground
             bind:api={boardApi}
@@ -317,15 +319,25 @@
             </div>
         {/if}
     </div>
-    <aside class="panel" aria-live="polite">
-        <p class="status">{statusText}</p>
-        <div class="actions">
-            <button type="button" on:click={undo} disabled={!hasHistory}>
-                Undo
-            </button>
-            <button type="button" on:click={reset}> Reset </button>
-        </div>
-    </aside>
+    {#if showStatus || showControls}
+        <aside class="panel" aria-live="polite">
+            {#if showStatus}
+                <p class="status">{statusText}</p>
+            {/if}
+            {#if showControls}
+                <div class="actions">
+                    <button
+                        type="button"
+                        on:click={undo}
+                        disabled={!hasHistory}
+                    >
+                        Undo
+                    </button>
+                    <button type="button" on:click={reset}> Reset </button>
+                </div>
+            {/if}
+        </aside>
+    {/if}
 </section>
 
 <style>
@@ -341,9 +353,13 @@
         }
     }
 
+    .chess-widget.compact {
+        display: block;
+    }
+
     .board {
         position: relative;
-        width: min(90vw, 560px);
+        width: min(100%, 720px);
         aspect-ratio: 1;
         margin-inline: auto;
         box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);

@@ -119,6 +119,31 @@ services:
     labels:
       - traefik.enable=false
 
+  chess-frontend:
+    build:
+      context: ./chess_pit/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_CHESS_API_BASE: /chess/api
+        VITE_CHESS_WS_BASE: /chess/ws
+        VITE_BASE_PATH: /chess/
+    image: arcade-chess-frontend:latest
+    container_name: chess-frontend
+    depends_on:
+      - chess-backend
+    restart: unless-stopped
+    networks:
+      - web
+      - chesspit
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.chess.rule=PathPrefix(`/chess`)
+      - traefik.http.routers.chess.priority=100
+      - traefik.http.routers.chess.entrypoints=web
+      - traefik.http.routers.chess.middlewares=chess-strip
+      - traefik.http.services.chess.loadbalancer.server.port=80
+      - traefik.http.middlewares.chess-strip.stripprefix.prefixes=/chess
+
   landing:
     build:
       context: ./landing_arcade/landing

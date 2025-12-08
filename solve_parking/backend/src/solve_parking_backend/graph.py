@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-from typing import List, Tuple, Dict, Optional, Any
+from typing import List, Dict, Optional, Any
 import sys
 
 

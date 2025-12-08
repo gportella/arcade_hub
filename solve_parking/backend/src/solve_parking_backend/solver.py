@@ -13,7 +13,6 @@ from .services import (
 )
 from .models import MoveRequest, Orientation, PuzzleState
 from collections import deque
-from typing import Tuple
 
 MAX_ITER = 1000000
 

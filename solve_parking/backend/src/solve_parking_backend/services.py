@@ -51,7 +51,6 @@ def initial_state(hard: bool = False) -> PuzzleState:
     )
 
 
-from typing import Iterable
 
 
 def generate_stop_positions(

@@ -52,12 +52,13 @@
         display: flex;
         flex-direction: column;
         gap: 1rem;
-        padding: 1.9rem;
+        padding: clamp(1.4rem, 2vw, 1.9rem);
         border-radius: 1.35rem;
         background: var(--card-bg);
         border: 1px solid var(--card-border);
         box-shadow: var(--glow);
         overflow: hidden;
+        height: 100%;
     }
 
     .card > * {
@@ -67,9 +68,9 @@
 
     .card__header {
         display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 1rem;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 0.75rem;
     }
 
     h2 {
@@ -77,6 +78,7 @@
         font-size: clamp(1.35rem, 1.5vw + 1rem, 1.75rem);
         color: #f7f9ff;
         letter-spacing: 0.03em;
+        flex: 1 1 60%;
     }
 
     .card__description {
@@ -98,6 +100,7 @@
         display: flex;
         gap: 0.75rem;
         flex-wrap: wrap;
+        margin-top: auto;
     }
 
     .card__link {
@@ -125,6 +128,9 @@
     }
 
     button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         border: 1px solid rgba(95, 123, 255, 0.35);
         background: rgba(13, 19, 34, 0.6);
         border-radius: 999px;
@@ -150,6 +156,20 @@
         text-transform: uppercase;
         letter-spacing: 0.05em;
         backdrop-filter: blur(8px);
+        flex: 0 0 auto;
+    }
+
+    @media (max-width: 520px) {
+        .card__footer {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .card__link,
+        button {
+            width: 100%;
+            justify-content: center;
+        }
     }
 
     .status--online {

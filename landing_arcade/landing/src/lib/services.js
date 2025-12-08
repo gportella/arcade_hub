@@ -52,6 +52,23 @@ const SERVICE_TAGLINES = {
         'Grid Guru',
         'Hint ready (lowkey)',
     ],
+    chess: [
+        "LitMate",
+        "Chex Lit",
+        "Rook N' Lit",
+        "Pawn Stars",
+        "Flex Chess",
+        "King Vibes",
+        "Queen Scene",
+        "Clout Castle",
+        "Hype Rook",
+        "Check Drip",
+        "Glow Gambit",
+        "Sauce & Sac",
+        "Meta Mate",
+        "Dope Draw",
+        "Wavy Wins",
+    ],
 };
 
 function pickRandom(options) {
@@ -65,13 +82,14 @@ function pickRandom(options) {
 function createDefaultServices() {
     return [
         {
-            id: 'unblock',
-            name: 'Unblock Me',
-            description: 'Slide the blocks to free the target piece.',
-            url: import.meta.env.VITE_UNBLOCK_URL ?? '/solve-parking/',
+            id: 'chesspit',
+            name: 'Rook On',
+            description:
+                'Live chess duels with move history, web sockets, and slick vibes.',
+            url: import.meta.env.VITE_CHESS_URL ?? '/chess/',
             healthUrl:
-                import.meta.env.VITE_UNBLOCK_HEALTH ?? '/solve-parking/health',
-            tagline: pickRandom(SERVICE_TAGLINES.unblock),
+                import.meta.env.VITE_CHESS_HEALTH ?? '/chess/api/health',
+            tagline: pickRandom(SERVICE_TAGLINES.chess),
         },
         {
             id: 'connect4',
@@ -81,6 +99,15 @@ function createDefaultServices() {
             healthUrl:
                 import.meta.env.VITE_CONNECT4_HEALTH ?? '/connect4/api/health',
             tagline: pickRandom(SERVICE_TAGLINES.connect4),
+        },
+        {
+            id: 'unblock',
+            name: 'Unblock Me',
+            description: 'Slide the blocks to free the target piece.',
+            url: import.meta.env.VITE_UNBLOCK_URL ?? '/solve-parking/',
+            healthUrl:
+                import.meta.env.VITE_UNBLOCK_HEALTH ?? '/solve-parking/health',
+            tagline: pickRandom(SERVICE_TAGLINES.unblock),
         },
     ];
 }
@@ -103,6 +130,13 @@ function inferTaglineKey(id, name) {
         normalizedName.includes('slide')
     ) {
         return 'unblock';
+    }
+    if (
+        normalizedId.includes('chess') ||
+        normalizedName.includes('chess') ||
+        normalizedName.includes('rook')
+    ) {
+        return 'chess';
     }
     return null;
 }

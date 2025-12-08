@@ -53,6 +53,7 @@ class GameCreate(BaseModel):
     white_player_id: int
     black_player_id: int
     initial_fen: Optional[str] = Field(default=None, max_length=100)
+    summary: Optional[str] = Field(default=None, max_length=255)
 
 
 class GameRead(BaseModel):
@@ -65,6 +66,9 @@ class GameRead(BaseModel):
     last_move_at: Optional[datetime]
     moves_count: int
     initial_fen: str
+    current_fen: str
+    current_position_hash: Optional[str]
+    summary: str
     pgn: str
 
     class Config:
@@ -73,6 +77,7 @@ class GameRead(BaseModel):
 
 class MoveCreate(BaseModel):
     notation: str = Field(min_length=2, max_length=12)
+    fen: Optional[str] = Field(default=None, max_length=100)
 
 
 class MoveRead(BaseModel):
@@ -82,6 +87,8 @@ class MoveRead(BaseModel):
     move_number: int
     notation: str
     played_at: datetime
+    fen: Optional[str]
+    position_hash: Optional[str]
 
     class Config:
         from_attributes = True
@@ -89,6 +96,35 @@ class MoveRead(BaseModel):
 
 class GameDetail(GameRead):
     moves: list[MoveRead] = Field(default_factory=list)
+
+
+class OpponentSummary(BaseModel):
+    id: int
+    username: str
+    avatar_url: Optional[str]
+
+
+class HubGameSummary(BaseModel):
+    id: int
+    opponent: OpponentSummary
+    status: GameStatus
+    result: Optional[GameResult]
+    summary: str
+    initial_fen: str
+    current_fen: str
+    current_position_hash: Optional[str]
+    moves_count: int
+    started_at: datetime
+    last_updated: datetime
+    your_color: str
+    turn: str
+    pgn: str
+
+
+class HubResponse(BaseModel):
+    user: UserRead
+    games: list[HubGameSummary]
+    opponents: list[OpponentSummary]
 
 
 class GameFinishRequest(BaseModel):

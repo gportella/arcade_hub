@@ -8,9 +8,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from fastapi import FastAPI
+
 from alembic import command
 from alembic.config import Config as AlembicConfig
-from fastapi import FastAPI
 
 from .config import Settings, get_settings
 from .crud.users import get_user_by_username

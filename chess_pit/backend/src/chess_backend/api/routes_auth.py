@@ -7,8 +7,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from ..api.deps import SessionDep
 from ..crud.users import get_user_by_username
-from ..security import create_access_token, verify_password
 from ..schemas import Token
+from ..security import create_access_token, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

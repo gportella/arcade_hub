@@ -11,7 +11,9 @@ from ..crud.games import append_move, create_game, finish_game, get_game, list_g
 from ..crud.users import update_user_stats
 from ..db import get_session
 from ..models import DEFAULT_START_FEN, Game, GameResult, GameStatus, Move, User
+from ..realtime import broadcast_game_finished, broadcast_move
 from ..schemas import GameCreate, GameDetail, GameFinishRequest, GameRead, MoveCreate, MoveRead
+from ..utils.fen import fen_hash, normalize_fen
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -36,11 +38,17 @@ async def create_new_game(
             detail="Cannot create games for other users",
         )
 
+    initial_fen = normalize_fen(game_in.initial_fen, DEFAULT_START_FEN)
+    position_hash = fen_hash(initial_fen)
+
     game = Game(
         white_player_id=game_in.white_player_id,
         black_player_id=game_in.black_player_id,
         status=GameStatus.pending,
-        initial_fen=game_in.initial_fen or DEFAULT_START_FEN,
+        initial_fen=initial_fen,
+        current_fen=initial_fen,
+        current_position_hash=position_hash,
+        summary=game_in.summary or "Friendly challenge",
     )
     game = create_game(session, game)
     return GameRead.model_validate(game)
@@ -103,8 +111,10 @@ async def record_move(
         move_number=game.moves_count + 1,
         notation=move_in.notation,
         played_at=datetime.utcnow(),
+        fen=move_in.fen,
     )
     move = append_move(session, game, move)
+    await broadcast_move(game, move)
     return MoveRead.model_validate(move)
 
 
@@ -139,4 +149,5 @@ async def mark_game_finished(
         else:
             update_user_stats(session, white_player, draw=True)
             update_user_stats(session, black_player, draw=True)
+    await broadcast_game_finished(game)
     return GameRead.model_validate(game)

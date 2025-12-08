@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     admin_username: Optional[str] = Field(default=None, alias="CHESS_ADMIN_USERNAME")
     admin_password: Optional[str] = Field(default=None, alias="CHESS_ADMIN_PASSWORD")
     data_dir: Path = Field(default=Path("./data"), alias="CHESS_DATA_DIR")
-    run_migrations: bool = Field(default=True, alias="CHESS_RUN_MIGRATIONS")
+    run_migrations: bool = Field(default=False, alias="CHESS_RUN_MIGRATIONS")
 
     model_config = {
         "env_file": ".env",

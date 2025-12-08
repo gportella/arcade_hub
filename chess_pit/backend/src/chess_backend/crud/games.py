@@ -6,6 +6,7 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from ..models import Game, GameResult, GameStatus, Move
+from ..utils.fen import fen_hash, normalize_fen
 
 
 def _append_pgn(existing: str, move: Move) -> str:
@@ -18,6 +19,9 @@ def _append_pgn(existing: str, move: Move) -> str:
 
 
 def create_game(session: Session, game: Game) -> Game:
+    game.initial_fen = normalize_fen(game.initial_fen, game.initial_fen)
+    game.current_fen = normalize_fen(game.current_fen, game.initial_fen)
+    game.current_position_hash = fen_hash(game.current_fen)
     session.add(game)
     session.commit()
     session.refresh(game)
@@ -35,12 +39,16 @@ def list_games(session: Session) -> list[Game]:
 
 
 def append_move(session: Session, game: Game, move: Move) -> Move:
+    move.fen = normalize_fen(move.fen, game.current_fen)
+    move.position_hash = fen_hash(move.fen)
     session.add(move)
     game.moves_count += 1
     game.last_move_at = move.played_at
     if game.status == GameStatus.pending:
         game.status = GameStatus.active
     game.pgn = _append_pgn(game.pgn, move)
+    game.current_fen = move.fen or game.current_fen
+    game.current_position_hash = fen_hash(game.current_fen)
     session.add(game)
     session.commit()
     session.refresh(move)
@@ -59,6 +67,7 @@ def finish_game(session: Session, game: Game, result: GameResult) -> Game:
     else:
         outcome = "1/2-1/2"
     game.pgn = (game.pgn + f" {outcome}").strip()
+    game.current_position_hash = fen_hash(game.current_fen)
     session.add(game)
     session.commit()
     session.refresh(game)

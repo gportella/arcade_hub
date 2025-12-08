@@ -7,7 +7,14 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from .api import routes_auth, routes_games, routes_health, routes_users
+from .api import (
+    routes_auth,
+    routes_games,
+    routes_health,
+    routes_hub,
+    routes_realtime,
+    routes_users,
+)
 from .lifespan import app_lifespan
 
 log = logging.getLogger(__name__)
@@ -23,3 +30,5 @@ app.include_router(routes_health.router)
 app.include_router(routes_auth.router)
 app.include_router(routes_users.router)
 app.include_router(routes_games.router)
+app.include_router(routes_hub.router)
+app.include_router(routes_realtime.router)

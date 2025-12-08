@@ -9,7 +9,6 @@ from typing import Optional
 from sqlalchemy import Column, Text, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
-
 DEFAULT_START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
@@ -66,6 +65,9 @@ class Game(SQLModel, table=True):  # type: ignore[call-arg]
     last_move_at: Optional[datetime] = Field(default=None, index=True)
     moves_count: int = Field(default=0, ge=0)
     initial_fen: str = Field(default=DEFAULT_START_FEN, max_length=100)
+    current_fen: str = Field(default=DEFAULT_START_FEN, max_length=100)
+    current_position_hash: Optional[str] = Field(default=None, max_length=64, index=True)
+    summary: str = Field(default="Friendly challenge", max_length=255)
     pgn: str = Field(
         default="",
         sa_column=Column(Text, nullable=False),
@@ -94,6 +96,8 @@ class Move(SQLModel, table=True):  # type: ignore[call-arg]
     move_number: int = Field(ge=1)
     notation: str = Field(max_length=12)
     played_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    fen: Optional[str] = Field(default=None, max_length=100)
+    position_hash: Optional[str] = Field(default=None, max_length=64, index=True)
 
     game: "Game" = Relationship(back_populates="moves")
     player: "User" = Relationship(back_populates="moves")

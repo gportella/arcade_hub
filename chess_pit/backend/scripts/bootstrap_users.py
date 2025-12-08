@@ -28,6 +28,24 @@ DEFAULT_USERS: list[dict[str, object]] = [
         "fallback_password": "marcarroni",
         "is_admin": False,
     },
+    {
+        "username": "Emma",
+        "password_env": "CHESS_EMMA_PASSWORD",
+        "fallback_password": "emmapema",
+        "is_admin": False,
+    },
+    {
+        "username": "Ferran",
+        "password_env": "CHESS_FERRAN_PASSWORD",
+        "fallback_password": "nandopando",
+        "is_admin": False,
+    },
+    {
+        "username": "Jaume",
+        "password_env": "CHESS_JAUME_PASSWORD",
+        "fallback_password": "jaumeescacs",
+        "is_admin": False,
+    },
 ]
 
 

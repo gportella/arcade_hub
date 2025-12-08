@@ -381,8 +381,8 @@
     } catch (error) {
       gameError =
         error instanceof Error ? error.message : "Move could not be recorded.";
-    } finally {
       await refreshSelectedGame(selectedGame.id);
+    } finally {
       await loadHub();
     }
   };

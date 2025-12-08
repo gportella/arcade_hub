@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="rookGradient" x1="12" y1="8" x2="120" y2="124" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5f7bff" />
+      <stop offset="0.5" stop-color="#4bc4ff" />
+      <stop offset="1" stop-color="#1b1f3b" />
+    </linearGradient>
+    <linearGradient id="rookHighlight" x1="40" y1="28" x2="88" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.65" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <rect x="8" y="12" width="112" height="104" rx="18" fill="#060913" />
+  <rect x="10" y="14" width="108" height="100" rx="16" fill="#0f1424" />
+  <path
+    d="M40 28h12v12h12V28h12v12h12V28h12v22h-10.4l-5.3 18H90v14H38v-14h15.7l-5.3-18H38V28h2z"
+    fill="url(#rookGradient)"
+  />
+  <path
+    d="M88 92H40l-6 16h60l-6-16z"
+    fill="url(#rookGradient)"
+  />
+  <path
+    d="M44 60h40l-6 20H50l-6-20z"
+    fill="url(#rookHighlight)"
+  />
+  <rect x="34" y="88" width="60" height="6" rx="3" fill="#1b2138" />
+  <rect x="28" y="104" width="72" height="6" rx="3" fill="#1b2138" />
+</svg>

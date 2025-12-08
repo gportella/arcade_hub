@@ -1,9 +1,37 @@
 const DEFAULT_API_BASE = "http://localhost:8000";
-const rawApiBase = import.meta.env.VITE_CHESS_API_BASE || DEFAULT_API_BASE;
-const API_BASE = rawApiBase.replace(/\/?$/, "");
 
-const rawWsBase = import.meta.env.VITE_CHESS_WS_BASE || API_BASE;
-const WS_BASE = rawWsBase.replace(/\/?$/, "");
+function normalizeBase(value) {
+    return value.replace(/\/?$/, "");
+}
+
+function resolveBase(raw, fallback) {
+    if (!raw) {
+        return normalizeBase(fallback);
+    }
+    const sanitized = raw.trim();
+    if (!sanitized) {
+        return normalizeBase(fallback);
+    }
+    try {
+        if (sanitized.startsWith("/")) {
+            const origin =
+                typeof window !== "undefined" && window.location
+                    ? window.location.origin
+                    : fallback;
+            return normalizeBase(new URL(sanitized, origin).toString());
+        }
+        return normalizeBase(new URL(sanitized).toString());
+    } catch (error) {
+        console.warn("Invalid base URL provided; falling back to default.", {
+            configured: sanitized,
+            error,
+        });
+        return normalizeBase(fallback);
+    }
+}
+
+const API_BASE = resolveBase(import.meta.env.VITE_CHESS_API_BASE, DEFAULT_API_BASE);
+const WS_BASE = resolveBase(import.meta.env.VITE_CHESS_WS_BASE, API_BASE);
 
 function buildJsonHeaders(token) {
     const headers = new Headers({ "Content-Type": "application/json" });
@@ -109,13 +137,17 @@ export async function updateUser(userId, payload, token) {
 }
 
 function buildWebSocketUrl(path) {
-    const url = new URL(path, WS_BASE);
-    if (url.protocol === "http:") {
-        url.protocol = "ws:";
-    } else if (url.protocol === "https:") {
-        url.protocol = "wss:";
+    const sanitizedBase = WS_BASE.replace(/\/$/, "");
+    const normalizedPath = path.startsWith("/")
+        ? path
+        : `/${path}`;
+    const absoluteUrl = new URL(`${sanitizedBase}${normalizedPath}`);
+    if (absoluteUrl.protocol === "http:") {
+        absoluteUrl.protocol = "ws:";
+    } else if (absoluteUrl.protocol === "https:") {
+        absoluteUrl.protocol = "wss:";
     }
-    return url.toString();
+    return absoluteUrl.toString();
 }
 
 export function connectToGame(gameId) {

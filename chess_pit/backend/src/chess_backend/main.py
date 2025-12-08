@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
     routes_auth,
@@ -15,10 +16,20 @@ from .api import (
     routes_realtime,
     routes_users,
 )
+from .config import get_settings
 from .lifespan import app_lifespan
 
 log = logging.getLogger(__name__)
 app = FastAPI(title="Chess Pit Backend", version="0.1.0", lifespan=app_lifespan)
+
+settings = get_settings()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/", tags=["health"])

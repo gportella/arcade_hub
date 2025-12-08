@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
+from alembic import context
 from chess_backend import models  # noqa: F401  # ensure models are registered
 from chess_backend.config import get_settings
 

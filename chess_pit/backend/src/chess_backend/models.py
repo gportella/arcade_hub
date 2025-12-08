@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Optional
 
 from sqlalchemy import Column, Text, UniqueConstraint
+from sqlalchemy.orm import relationship
 from sqlmodel import Field, Relationship, SQLModel
 
 DEFAULT_START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -41,17 +42,28 @@ class User(UserBase, table=True):  # type: ignore[call-arg]
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    white_games: list["Game"] = Relationship(  # type: ignore[name-defined]
-        back_populates="white_player",
-        sa_relationship_kwargs={"lazy": "selectin"},
+    white_games: list["Game"] = Relationship(
+        sa_relationship=relationship(
+            "Game",
+            back_populates="white_player",
+            lazy="selectin",
+            foreign_keys="Game.white_player_id",
+        )
     )
-    black_games: list["Game"] = Relationship(  # type: ignore[name-defined]
-        back_populates="black_player",
-        sa_relationship_kwargs={"lazy": "selectin"},
+    black_games: list["Game"] = Relationship(
+        sa_relationship=relationship(
+            "Game",
+            back_populates="black_player",
+            lazy="selectin",
+            foreign_keys="Game.black_player_id",
+        )
     )
-    moves: list["Move"] = Relationship(  # type: ignore[name-defined]
-        back_populates="player",
-        sa_relationship_kwargs={"lazy": "selectin"},
+    moves: list["Move"] = Relationship(
+        sa_relationship=relationship(
+            "Move",
+            back_populates="player",
+            lazy="selectin",
+        )
     )
 
 
@@ -74,16 +86,28 @@ class Game(SQLModel, table=True):  # type: ignore[call-arg]
     )
 
     white_player: "User" = Relationship(
-        back_populates="white_games",
-        sa_relationship_kwargs={"lazy": "joined"},
+        sa_relationship=relationship(
+            "User",
+            back_populates="white_games",
+            lazy="joined",
+            foreign_keys="Game.white_player_id",
+        )
     )
     black_player: "User" = Relationship(
-        back_populates="black_games",
-        sa_relationship_kwargs={"lazy": "joined"},
+        sa_relationship=relationship(
+            "User",
+            back_populates="black_games",
+            lazy="joined",
+            foreign_keys="Game.black_player_id",
+        )
     )
     moves: list["Move"] = Relationship(
-        back_populates="game",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan", "lazy": "selectin"},
+        sa_relationship=relationship(
+            "Move",
+            back_populates="game",
+            cascade="all, delete-orphan",
+            lazy="selectin",
+        )
     )
 
 
@@ -99,5 +123,15 @@ class Move(SQLModel, table=True):  # type: ignore[call-arg]
     fen: Optional[str] = Field(default=None, max_length=100)
     position_hash: Optional[str] = Field(default=None, max_length=64, index=True)
 
-    game: "Game" = Relationship(back_populates="moves")
-    player: "User" = Relationship(back_populates="moves")
+    game: "Game" = Relationship(
+        sa_relationship=relationship(
+            "Game",
+            back_populates="moves",
+        )
+    )
+    player: "User" = Relationship(
+        sa_relationship=relationship(
+            "User",
+            back_populates="moves",
+        )
+    )

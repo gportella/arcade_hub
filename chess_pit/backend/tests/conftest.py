@@ -6,10 +6,11 @@ import os
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
 from chess_backend import db as db_module
 from chess_backend.config import get_settings
@@ -48,7 +49,7 @@ def session(engine) -> Iterator[Session]:
         yield session
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def client(engine) -> AsyncIterator[AsyncClient]:
     def override_get_session() -> Iterator[Session]:
         with Session(engine) as session:

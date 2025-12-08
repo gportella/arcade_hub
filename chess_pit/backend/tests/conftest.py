@@ -14,8 +14,11 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from chess_backend import db as db_module
 from chess_backend.config import get_settings
+from chess_backend.crud.users import get_user_by_username
 from chess_backend.db import get_session
 from chess_backend.main import app
+from chess_backend.models import User
+from chess_backend.security import hash_password
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +27,8 @@ def configure_settings(tmp_path) -> Iterator[None]:
     os.environ.setdefault("CHESS_DATABASE_URL", "sqlite://")
     os.environ.setdefault("CHESS_DATA_DIR", str(tmp_path / "data"))
     os.environ.setdefault("CHESS_RUN_MIGRATIONS", "false")
+    os.environ.setdefault("CHESS_ADMIN_USERNAME", "admin")
+    os.environ.setdefault("CHESS_ADMIN_PASSWORD", "AdminPass123")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -38,6 +43,15 @@ def engine() -> Iterator[Engine]:
     )
     SQLModel.metadata.create_all(engine)
     try:
+        with Session(engine) as session:
+            if not get_user_by_username(session, "admin"):
+                admin_user = User(
+                    username="admin",
+                    hashed_password=hash_password("AdminPass123"),
+                    is_admin=True,
+                )
+                session.add(admin_user)
+                session.commit()
         yield engine
     finally:
         SQLModel.metadata.drop_all(engine)

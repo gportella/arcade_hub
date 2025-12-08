@@ -13,9 +13,49 @@ from ..db import get_session
 from ..models import DEFAULT_START_FEN, Game, GameResult, GameStatus, Move, User
 from ..realtime import broadcast_game_finished, broadcast_move
 from ..schemas import GameCreate, GameDetail, GameFinishRequest, GameRead, MoveCreate, MoveRead
-from ..utils.fen import fen_hash, normalize_fen
+from ..utils.fen import active_color, fen_hash, normalize_fen
 
 router = APIRouter(prefix="/games", tags=["games"])
+
+
+def _finalize_game(
+    session: Session,
+    game: Game,
+    result: GameResult,
+    *,
+    summary_note: str | None = None,
+) -> Game:
+    game = finish_game(session, game, result)
+
+    note = (summary_note or "").strip()
+    if note:
+        current_summary = game.summary or ""
+        if note.lower() not in current_summary.lower():
+            game.summary = f"{current_summary} · {note}".strip(" ·") if current_summary else note
+
+    session.add(game)
+
+    white_player = session.get(User, game.white_player_id)
+    black_player = session.get(User, game.black_player_id)
+
+    if white_player:
+        if result == GameResult.white:
+            update_user_stats(session, white_player, won=True)
+        elif result == GameResult.black:
+            update_user_stats(session, white_player, lost=True)
+        else:
+            update_user_stats(session, white_player, draw=True)
+
+    if black_player:
+        if result == GameResult.white:
+            update_user_stats(session, black_player, lost=True)
+        elif result == GameResult.black:
+            update_user_stats(session, black_player, won=True)
+        else:
+            update_user_stats(session, black_player, draw=True)
+
+    session.refresh(game)
+    return game
 
 
 @router.post("", response_model=GameRead, status_code=status.HTTP_201_CREATED)
@@ -96,13 +136,30 @@ async def record_move(
     if game is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
 
-    if (
-        current_user.id not in {game.white_player_id, game.black_player_id}
-        and not current_user.is_admin
-    ):
+    if current_user.id not in {game.white_player_id, game.black_player_id}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot move for this game",
+        )
+
+    if game.status in {GameStatus.completed, GameStatus.aborted}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Game is no longer active",
+        )
+
+    default_turn = "white" if game.moves_count % 2 == 0 else "black"
+    expected_turn = active_color(game.current_fen, default=default_turn)
+    parity_player_id = game.white_player_id if game.moves_count % 2 == 0 else game.black_player_id
+    expected_player_id = parity_player_id
+    if expected_player_id not in {game.white_player_id, game.black_player_id}:
+        expected_player_id = (
+            game.white_player_id if expected_turn == "white" else game.black_player_id
+        )
+    if current_user.id != expected_player_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not your turn",
         )
 
     move = Move(
@@ -115,7 +172,55 @@ async def record_move(
     )
     move = append_move(session, game, move)
     await broadcast_move(game, move)
+
+    notation = move.notation or ""
+    if notation.endswith("#"):
+        winner = GameResult.white if move.player_id == game.white_player_id else GameResult.black
+        winner_label = "White" if winner == GameResult.white else "Black"
+        loser_label = "Black" if winner == GameResult.white else "White"
+        game = _finalize_game(
+            session,
+            game,
+            winner,
+            summary_note=f"{winner_label} checkmated {loser_label}",
+        )
+        await broadcast_game_finished(game)
+
     return MoveRead.model_validate(move)
+
+
+@router.post("/{game_id}/resign", response_model=GameRead)
+async def resign_game(
+    game_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> GameRead:
+    game = get_game(session, game_id)
+    if game is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
+
+    if current_user.id not in {game.white_player_id, game.black_player_id}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot resign this game",
+        )
+
+    if game.status in {GameStatus.completed, GameStatus.aborted}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Game is no longer active",
+        )
+
+    resigning_color = "White" if current_user.id == game.white_player_id else "Black"
+    result = GameResult.black if resigning_color == "White" else GameResult.white
+    game = _finalize_game(
+        session,
+        game,
+        result,
+        summary_note=f"{resigning_color} resigned",
+    )
+    await broadcast_game_finished(game)
+    return GameRead.model_validate(game)
 
 
 @router.post("/{game_id}/finish", response_model=GameRead)
@@ -135,19 +240,6 @@ async def mark_game_finished(
     if game is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
 
-    game = finish_game(session, game, payload.result)
-
-    white_player = session.get(User, game.white_player_id)
-    black_player = session.get(User, game.black_player_id)
-    if white_player and black_player:
-        if payload.result == GameResult.white:
-            update_user_stats(session, white_player, won=True)
-            update_user_stats(session, black_player, lost=True)
-        elif payload.result == GameResult.black:
-            update_user_stats(session, white_player, lost=True)
-            update_user_stats(session, black_player, won=True)
-        else:
-            update_user_stats(session, white_player, draw=True)
-            update_user_stats(session, black_player, draw=True)
+    game = _finalize_game(session, game, payload.result)
     await broadcast_game_finished(game)
     return GameRead.model_validate(game)

@@ -26,13 +26,16 @@
     }
 
     let boardApi;
+    let boardElement;
+    let resizeObserver;
     let statusText = "";
     /** @type {import("chessground/types").Key[]} */
     let lastMove = [];
     let hasHistory = false;
     let hasMounted = false;
-    let lastAppliedFen = null;
     let previousStartingFen = null;
+    let previousResetToken = null;
+    let previousBoardFen = null;
     let currentFen = game.fen();
     /** @type {"white" | "black"} */
     let movableColor = "white";
@@ -52,16 +55,20 @@
     /** @type {"white" | "black"} */
     export let orientation = "white";
     export let startingFen = null;
+    export let positionFen = null;
+    export let resetToken = null;
     export let onMove = (_detail) => {};
     export let onUndo = (_detail) => {};
     export let onReset = (_detail) => {};
     export let showStatus = true;
     export let showControls = true;
+    export let interactive = true;
 
     function initialiseGame() {
-        if (startingFen) {
+        const sourceFen = startingFen || positionFen;
+        if (sourceFen) {
             try {
-                game.load(startingFen);
+                game.load(sourceFen);
             } catch (error) {
                 console.warn(
                     "Invalid FEN supplied, falling back to default start position.",
@@ -73,24 +80,58 @@
             game.reset();
         }
         lastMove = [];
-        lastAppliedFen = game.fen();
         previousStartingFen = startingFen;
+        previousResetToken = resetToken;
+        previousBoardFen = null;
+        updateState();
+    }
+
+    function applyExternalFen(fen) {
+        if (!fen) {
+            return;
+        }
+        if (fen === currentFen) {
+            return;
+        }
+        try {
+            game.load(fen);
+        } catch (error) {
+            console.warn("Invalid external FEN supplied", error);
+            return;
+        }
+        lastMove = [];
+        previousBoardFen = null;
         updateState();
     }
 
     onMount(() => {
         hasMounted = true;
         initialiseGame();
+        if (typeof ResizeObserver !== "undefined" && boardElement) {
+            resizeObserver = new ResizeObserver(() => {
+                boardApi?.redrawAll();
+            });
+            resizeObserver.observe(boardElement);
+        }
+        return () => {
+            resizeObserver?.disconnect();
+        };
     });
 
     $: resolvedOrientation = orientation === "black" ? "black" : "white";
 
     $: if (hasMounted) {
-        if (startingFen && startingFen !== lastAppliedFen) {
+        if (resetToken !== previousResetToken) {
             initialiseGame();
-        } else if (startingFen === null && previousStartingFen !== null) {
+        } else if (startingFen !== previousStartingFen) {
             initialiseGame();
+        } else if (positionFen && positionFen !== currentFen) {
+            applyExternalFen(positionFen);
         }
+    }
+
+    $: if (boardApi && hasMounted) {
+        updateState();
     }
 
     /** @returns {import("chessground/types").Dests} */
@@ -133,23 +174,41 @@
         isInCheck = game.inCheck();
         checkColor = isInCheck ? movableColor : false;
         hasHistory = game.history().length > 0;
-        boardApi?.set({
-            fen: currentFen,
+
+        const boardReady = Boolean(boardApi);
+        const fenChanged = currentFen !== previousBoardFen;
+        const lastMovePayload = lastMove.length ? lastMove : undefined;
+        const config = {
             turnColor: movableColor,
             orientation: resolvedOrientation,
-            lastMove,
+            lastMove: lastMovePayload,
             check: checkColor,
             movable: {
                 free: false,
-                color: movableColor,
-                dests: movableDests,
-                showDests: true,
+                color: interactive ? movableColor : undefined,
+                dests: interactive ? movableDests : new Map(),
+                showDests: interactive,
+            },
+            draggable: {
+                enabled: interactive,
             },
             highlight: {
-                lastMove,
+                lastMove: lastMovePayload,
                 check: Boolean(checkColor),
             },
-        });
+        };
+
+        if (!boardReady) {
+            previousBoardFen = null;
+            return;
+        }
+
+        if (fenChanged) {
+            config.fen = currentFen;
+            previousBoardFen = currentFen;
+        }
+
+        boardApi.set(config);
     }
 
     function promotionLabel(piece) {
@@ -213,6 +272,10 @@
     }
 
     function handleMove(from, to, metadata = {}) {
+        if (!interactive) {
+            updateState();
+            return;
+        }
         const legalMoves = game.moves({ verbose: true });
         const candidateMoves = legalMoves.filter(
             (move) => move.from === from && move.to === to,
@@ -269,10 +332,28 @@
         updateState();
         onReset({ fen: game.fen() });
     }
+
+    export function undoMove() {
+        if (!interactive) {
+            return;
+        }
+        undo();
+    }
+
+    export function resetPosition() {
+        reset();
+    }
+
+    $: if (hasMounted) {
+        const _interactive = interactive;
+        if (_interactive !== undefined) {
+            updateState();
+        }
+    }
 </script>
 
 <section class="chess-widget" class:compact={!showStatus && !showControls}>
-    <div class="board" aria-label="Chess board">
+    <div class="board" aria-label="Chess board" bind:this={boardElement}>
         <Chessground
             bind:api={boardApi}
             fen={currentFen}

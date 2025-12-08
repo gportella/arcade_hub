@@ -6,7 +6,7 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from ..models import Game, GameResult, GameStatus, Move
-from ..utils.fen import fen_hash, normalize_fen
+from ..utils.fen import fen_hash, normalize_fen, set_active_color
 
 
 def _append_pgn(existing: str, move: Move) -> str:
@@ -14,7 +14,9 @@ def _append_pgn(existing: str, move: Move) -> str:
     if move.move_number % 2 == 1:
         snippet = f"{turn}. {move.notation}"
     else:
-        snippet = f"{turn}... {move.notation}"
+        snippet = move.notation
+        if not existing.strip():
+            snippet = f"{turn}... {move.notation}"
     return (existing + " " + snippet).strip()
 
 
@@ -39,7 +41,11 @@ def list_games(session: Session) -> list[Game]:
 
 
 def append_move(session: Session, game: Game, move: Move) -> Move:
-    move.fen = normalize_fen(move.fen, game.current_fen)
+    move_fen = normalize_fen(move.fen, game.current_fen)
+    if move_fen is None:
+        move_fen = game.current_fen
+    next_color = "black" if move.player_id == game.white_player_id else "white"
+    move.fen = set_active_color(move_fen, next_color)
     move.position_hash = fen_hash(move.fen)
     session.add(move)
     game.moves_count += 1

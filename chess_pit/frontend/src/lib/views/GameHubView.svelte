@@ -17,9 +17,13 @@
     export let onLaunchGame = () => {};
     export let onOpenProfile = () => {};
     export let onLogout = () => {};
+    export let onRefreshGames = () => {};
+
+    const isFinished = (game) =>
+        game.status === "completed" || game.status === "aborted";
 
     const unfinishedCount = () =>
-        games.filter((game) => game.status !== "finished").length;
+        games.filter((game) => !isFinished(game)).length;
 </script>
 
 <main class="hub">
@@ -46,9 +50,14 @@
     <section class="panel glass-panel">
         <div class="panel-header">
             <h2>Your matches</h2>
-            <button class="secondary small" on:click={onToggleNewGameForm}>
-                {showNewGameForm ? "Close" : "New challenge"}
-            </button>
+            <div class="panel-actions">
+                <button class="secondary small" on:click={onRefreshGames}>
+                    Refresh
+                </button>
+                <button class="secondary small" on:click={onToggleNewGameForm}>
+                    {showNewGameForm ? "Close" : "New challenge"}
+                </button>
+            </div>
         </div>
 
         {#if showNewGameForm}
@@ -66,7 +75,10 @@
                 >
                     {#each availableOpponents as opponent}
                         <option value={opponent.id}>
-                            {opponent.nickname} ({opponent.title})
+                            {opponent.nickname}
+                            {#if opponent.title}
+                                ({opponent.title})
+                            {/if}
                         </option>
                     {/each}
                 </select>
@@ -169,6 +181,14 @@
         align-items: center;
         justify-content: space-between;
         gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .panel-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
     }
 
     .panel-header h2 {
@@ -330,6 +350,10 @@
         }
 
         .panel-header button {
+            width: 100%;
+        }
+
+        .panel-actions {
             width: 100%;
         }
 

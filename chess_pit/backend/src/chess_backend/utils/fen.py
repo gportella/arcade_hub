@@ -43,3 +43,25 @@ def active_color(raw_fen: Optional[str], *, default: str = "white") -> str:
     if len(parts) < 2:
         return default
     return "black" if parts[1] == "b" else "white"
+
+
+def set_active_color(raw_fen: Optional[str], color: str) -> Optional[str]:
+    """Return *raw_fen* with the active color field set to ``color``."""
+
+    if not raw_fen:
+        return raw_fen
+    parts = raw_fen.split()
+    if len(parts) < 2:
+        return raw_fen
+    parts[1] = "w" if color.lower().startswith("w") else "b"
+    return " ".join(parts)
+
+
+def toggle_active_color(raw_fen: Optional[str]) -> Optional[str]:
+    """Return *raw_fen* with the active color flipped, preserving other fields."""
+
+    if not raw_fen:
+        return raw_fen
+    current = active_color(raw_fen)
+    next_color = "black" if current == "white" else "white"
+    return set_active_color(raw_fen, next_color)

@@ -2,15 +2,28 @@
     import ChessBoard from "../ChessBoard.svelte";
 
     export let showcaseFen = "";
-    export let onPlay = () => {};
-    export let onAdminLogin = () => {};
+    export let onPlay = (_credentials) => {};
+    export let onAdminLogin = (_credentials) => {};
+    export let error = "";
+    export let isLoading = false;
+
+    let username = "";
+    let password = "";
+
+    const submit = () => {
+        onPlay({ username, password });
+    };
+
+    const submitAdmin = () => {
+        onAdminLogin({ username, password });
+    };
 </script>
 
 <main class="landing">
     <section class="landing-card glass-panel">
         <div class="landing-header">
             <span class="landing-badge">Arcade Hub · Chess Pit</span>
-            <h1>Ready when you are</h1>
+            <h1>Ready to rook on</h1>
             <p class="landing-copy">
                 Fire up the board, then tap play to jump straight into your
                 matches.
@@ -23,12 +36,43 @@
                 showControls={false}
             />
         </div>
-        <div class="landing-actions">
-            <button on:click={onPlay}>Play!</button>
-            <button class="secondary compact" on:click={onAdminLogin}
-                >Admin login</button
-            >
-        </div>
+        <form class="landing-form" on:submit|preventDefault={submit}>
+            <label for="username">Username</label>
+            <input
+                id="username"
+                name="username"
+                autocomplete="username"
+                placeholder="player"
+                bind:value={username}
+                required
+            />
+            <label for="password">Password</label>
+            <input
+                id="password"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                placeholder="••••••••"
+                bind:value={password}
+                required
+            />
+            {#if error}
+                <p class="error" role="alert">{error}</p>
+            {/if}
+            <div class="landing-actions">
+                <button type="submit" disabled={isLoading}>
+                    {isLoading ? "Signing in…" : "Play"}
+                </button>
+                <button
+                    class="secondary compact"
+                    type="button"
+                    on:click={submitAdmin}
+                    disabled={isLoading}
+                >
+                    Admin login
+                </button>
+            </div>
+        </form>
     </section>
 </main>
 
@@ -106,6 +150,17 @@
     .landing-actions button:not(.compact) {
         flex: 1 1 auto;
         min-width: 0;
+    }
+
+    .landing-form {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .error {
+        margin: 0;
+        color: #f87171;
+        font-size: 0.9rem;
     }
 
     @media (max-width: 640px) {

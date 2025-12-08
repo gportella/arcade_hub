@@ -1,8 +1,12 @@
 <script>
+    /**
+     * @type {{ username: string; avatar_url?: string | null; games_won: number; games_lost: number; games_drawn: number } | null}
+     */
     export let user = null;
-    export let profileDraft = { nickname: "", avatar: "", bio: "" };
+    /** @type {{ avatarUrl: string; password: string }} */
+    export let profileDraft = { avatarUrl: "", password: "" };
     export let gameCount = 0;
-    export let onFieldChange = () => {};
+    export let onFieldChange = (_field, _value) => {};
     export let onSave = () => {};
     export let onBack = () => {};
     export let onLogout = () => {};
@@ -20,76 +24,69 @@
         </div>
     </header>
 
-    <section class="profile-card glass-panel">
-        <div class="identity">
-            <img
-                src={profileDraft.avatar || user.avatar}
-                alt={`Avatar of ${profileDraft.nickname || user.nickname}`}
-            />
-            <div>
-                <h1>{profileDraft.nickname || user.nickname}</h1>
-                <p class="rating">Rating {user.rating}</p>
-                <p class="meta">
-                    {gameCount} game{gameCount === 1 ? "" : "s"} in your library
-                </p>
+    {#if user}
+        <section class="profile-card glass-panel">
+            <div class="identity">
+                <img
+                    src={profileDraft.avatarUrl || user.avatar_url || ""}
+                    alt={`Avatar of ${user.username}`}
+                />
+                <div>
+                    <h1>{user.username}</h1>
+                    <p class="meta">
+                        {gameCount} game{gameCount === 1 ? "" : "s"} in your library
+                    </p>
+                    <ul class="stats">
+                        <li>Wins: {user.games_won}</li>
+                        <li>Losses: {user.games_lost}</li>
+                        <li>Draws: {user.games_drawn}</li>
+                    </ul>
+                </div>
             </div>
-        </div>
-        {#if user.bio}
-            <p class="bio">Current bio: {user.bio}</p>
-        {/if}
-    </section>
+        </section>
 
-    <section class="profile-form glass-panel">
-        <h2>Edit profile</h2>
-        <form on:submit|preventDefault={onSave}>
-            <label for="nickname">Display name</label>
-            <input
-                id="nickname"
-                name="nickname"
-                placeholder="Chess alias"
-                value={profileDraft.nickname}
-                on:input={(event) =>
-                    handleInput(
-                        "nickname",
-                        /** @type {HTMLInputElement} */ (event.currentTarget)
-                            .value,
-                    )}
-            />
+        <section class="profile-form glass-panel">
+            <h2>Update profile</h2>
+            <form on:submit|preventDefault={onSave}>
+                <label for="avatar">Avatar URL</label>
+                <input
+                    id="avatar"
+                    name="avatar"
+                    placeholder="https://..."
+                    value={profileDraft.avatarUrl}
+                    on:input={(event) =>
+                        handleInput(
+                            "avatarUrl",
+                            /** @type {HTMLInputElement} */ (
+                                event.currentTarget
+                            ).value,
+                        )}
+                />
 
-            <label for="avatar">Avatar URL</label>
-            <input
-                id="avatar"
-                name="avatar"
-                placeholder="https://..."
-                value={profileDraft.avatar}
-                on:input={(event) =>
-                    handleInput(
-                        "avatar",
-                        /** @type {HTMLInputElement} */ (event.currentTarget)
-                            .value,
-                    )}
-            />
+                <label for="password">New password</label>
+                <input
+                    id="password"
+                    name="password"
+                    type="password"
+                    placeholder="Leave blank to keep current password"
+                    value={profileDraft.password}
+                    on:input={(event) =>
+                        handleInput(
+                            "password",
+                            /** @type {HTMLInputElement} */ (
+                                event.currentTarget
+                            ).value,
+                        )}
+                />
 
-            <label for="bio">Bio</label>
-            <textarea
-                id="bio"
-                name="bio"
-                rows="3"
-                placeholder="Add a short tagline"
-                value={profileDraft.bio}
-                on:input={(event) =>
-                    handleInput(
-                        "bio",
-                        /** @type {HTMLTextAreaElement} */ (event.currentTarget)
-                            .value,
-                    )}
-            ></textarea>
-
-            <div class="form-actions">
-                <button type="submit">Save changes</button>
-            </div>
-        </form>
-    </section>
+                <div class="form-actions">
+                    <button type="submit">Save changes</button>
+                </div>
+            </form>
+        </section>
+    {:else}
+        <p class="placeholder">No user loaded.</p>
+    {/if}
 </main>
 
 <style>
@@ -144,20 +141,17 @@
         color: #f8fafc;
     }
 
-    .rating {
-        margin: 0.35rem 0;
-        color: #93c5fd;
-        font-weight: 600;
-    }
-
     .meta {
         margin: 0;
         color: rgba(226, 232, 240, 0.7);
     }
 
-    .bio {
-        margin: 0;
-        color: rgba(226, 232, 240, 0.7);
+    .stats {
+        margin: 0.4rem 0 0;
+        padding-left: 1.1rem;
+        color: rgba(226, 232, 240, 0.75);
+        display: grid;
+        gap: 0.2rem;
     }
 
     .profile-form {
@@ -177,10 +171,6 @@
         display: flex;
         flex-direction: column;
         gap: 0.85rem;
-    }
-
-    textarea {
-        font-family: inherit;
     }
 
     .form-actions {

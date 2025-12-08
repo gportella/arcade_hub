@@ -8,23 +8,33 @@
     export let colorLabel = (_color) => "";
     export let onMove = (_event) => {};
     export let onUndo = (_event) => {};
-    export let onReset = (_event) => {};
+    export let onResign = () => {};
     export let onBack = () => {};
     export let onLogout = () => {};
 
-    const isActiveGame = () => game?.status === "ongoing";
-    const noop = () => {};
+    const isActiveGame = () =>
+        game?.status === "active" || game?.status === "pending";
+    let boardRef;
+    let yourTurn = false;
+
+    const handleUndoClick = () => {
+        if (!yourTurn) return;
+        boardRef?.undoMove();
+    };
+
+    const handleResignClick = () => {
+        if (!active) return;
+        onResign();
+    };
 
     $: active = isActiveGame();
-    $: moveHandler = active ? onMove : noop;
-    $: undoHandler = active ? onUndo : noop;
-    $: resetHandler = active ? onReset : noop;
+    $: yourTurn = active && game?.turn === game?.yourColor;
     $: opponentName = game?.opponent?.nickname ?? "";
     $: opponentAvatar = game?.opponent?.avatar ?? "";
     $: lastUpdated = game ? formatTime(game.lastUpdated) : "";
     $: statusLabel = game ? gameStatusLabel(game) : "";
     $: color = game ? colorLabel(game.yourColor) : "";
-    $: resultLabel = game?.result ?? null;
+    $: resultLabel = game?.resultDisplay ?? null;
     $: summary = game?.summary ?? "";
     $: pgn = game?.pgn ?? "";
 </script>
@@ -58,18 +68,31 @@
 
         <section class="board-section">
             <ChessBoard
-                startingFen={game.fen}
+                bind:this={boardRef}
+                startingFen={game.initialFen}
+                positionFen={game.fen}
+                resetToken={game.id}
                 orientation={game.yourColor}
-                onMove={moveHandler}
-                onUndo={undoHandler}
-                onReset={resetHandler}
+                {onMove}
+                {onUndo}
                 showStatus={false}
                 showControls={false}
+                interactive={yourTurn}
             />
             {#if active}
                 <div class="board-controls" aria-label="Board controls">
-                    <button class="pill" on:click={undoHandler}>Undo</button>
-                    <button class="pill" on:click={resetHandler}>Reset</button>
+                    <!--
+                    <button
+                        class="pill"
+                        on:click={handleUndoClick}
+                        disabled={!yourTurn}
+                    >
+                        Undo
+                    </button>
+                    -->
+                    <button class="pill resign" on:click={handleResignClick}>
+                        Resign
+                    </button>
                 </div>
             {/if}
         </section>
@@ -181,6 +204,7 @@
         display: flex;
         gap: 0.65rem;
         justify-content: center;
+        flex-wrap: wrap;
     }
 
     .pill {
@@ -199,10 +223,25 @@
         background: rgba(59, 130, 246, 0.95);
     }
 
+    .pill:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        box-shadow: none;
+    }
+
+    .pill.resign {
+        background: rgba(239, 68, 68, 0.88);
+        color: #fee2e2;
+    }
+
+    .pill.resign:hover {
+        background: rgba(220, 38, 38, 0.95);
+    }
+
     .game-info {
         display: grid;
         gap: 1rem;
-        max-width: min(760px, 100%);
+        width: min(100%, 720px);
         margin: 0 auto;
     }
 
@@ -234,7 +273,10 @@
         color: #e2e8f0;
         padding: 0.75rem;
         font-family: "JetBrains Mono", "Fira Code", monospace;
-        resize: vertical;
+        resize: none;
+        max-height: 240px;
+        overflow-y: auto;
+        line-height: 1.45;
     }
 
     .ghost {

@@ -189,6 +189,62 @@
     };
   }
 
+  function appendPgn(existing, moveNumber, notation) {
+    const history = existing?.trim() ?? "";
+    if (!notation) return history;
+    const moveNo = Number.isFinite(moveNumber) ? Number(moveNumber) : 0;
+    const turn = Math.max(1, Math.floor((moveNo + 1) / 2));
+    const isWhiteMove = moveNo % 2 === 1;
+    let snippet;
+    if (isWhiteMove) {
+      snippet = `${turn}. ${notation}`;
+    } else {
+      snippet = notation;
+      if (!history) {
+        snippet = `${turn}... ${notation}`;
+      }
+    }
+    return history ? `${history} ${snippet}`.trim() : snippet;
+  }
+
+  function applySelfMoveUpdate(payload) {
+    if (!selectedGame) return;
+    const moveNumber = payload.move_number ?? selectedGame.movesCount + 1;
+    const notation = payload.notation ?? "";
+    const fen = normalizeFen(payload.fen) ?? selectedGame.fen;
+    const playedAt = payload.played_at ?? new Date().toISOString();
+    const turn = parseActiveColor(fen);
+    const moves = Array.isArray(selectedGame.moves)
+      ? [
+          ...selectedGame.moves,
+          {
+            move_number: moveNumber,
+            notation,
+            fen,
+            player_id: payload.player_id,
+            played_at: playedAt,
+          },
+        ]
+      : [
+          {
+            move_number: moveNumber,
+            notation,
+            fen,
+            player_id: payload.player_id,
+            played_at: playedAt,
+          },
+        ];
+    selectedGame = {
+      ...selectedGame,
+      fen,
+      turn,
+      movesCount: moveNumber,
+      lastUpdated: playedAt,
+      pgn: appendPgn(selectedGame.pgn, moveNumber, notation),
+      moves,
+    };
+  }
+
   function sortGames(entries = []) {
     return entries.slice().sort((a, b) => {
       const finishedA = a.status === "completed" || a.status === "aborted";
@@ -332,12 +388,24 @@
     if (!payload || payload.game_id !== gameId) {
       return;
     }
-    if (payload.type === "move" || payload.type === "game_finished") {
-      void loadHub();
-      if (selectedGameId === gameId) {
-        void refreshSelectedGame(gameId);
-      }
+    const isMove = payload.type === "move";
+    const isFinished = payload.type === "game_finished";
+    if (!isMove && !isFinished) {
+      return;
     }
+    void loadHub();
+    if (selectedGameId !== gameId) {
+      return;
+    }
+    if (isMove) {
+      if (payload.player_id === currentUser?.id) {
+        applySelfMoveUpdate(payload);
+        return;
+      }
+      void refreshSelectedGame(gameId);
+      return;
+    }
+    void refreshSelectedGame(gameId);
   }
 
   const toggleNewGameForm = () => {
@@ -401,11 +469,14 @@
         { notation, fen: normalizedFen },
         accessToken,
       );
+      if (!socket) {
+        await refreshSelectedGame(selectedGame.id);
+        await loadHub();
+      }
     } catch (error) {
       gameError =
         error instanceof Error ? error.message : "Move could not be recorded.";
       await refreshSelectedGame(selectedGame.id);
-    } finally {
       await loadHub();
     }
   };

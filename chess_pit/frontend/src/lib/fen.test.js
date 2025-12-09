@@ -31,6 +31,12 @@ describe('fenEquals', () => {
         expect(fenEquals(left, right)).toBe(false);
     });
 
+    it('ignores halfmove and fullmove counters when comparing', () => {
+        const left = '8/8/8/8/8/8/8/8 w - - 12 27';
+        const right = '8/8/8/8/8/8/8/8 w - - 0 1';
+        expect(fenEquals(left, right)).toBe(true);
+    });
+
     it('handles null values', () => {
         expect(fenEquals(null, null)).toBe(true);
         expect(fenEquals(null, '8/8/8/8/8/8/8/8 w - - 0 1')).toBe(false);

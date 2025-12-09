@@ -24,5 +24,13 @@ export function fenEquals(a, b) {
     if (left === null || right === null) {
         return left === right;
     }
-    return left === right;
+    const leftParts = left.split(' ');
+    const rightParts = right.split(' ');
+    const compareFields = Math.min(4, leftParts.length, rightParts.length);
+    for (let index = 0; index < compareFields; index += 1) {
+        if (leftParts[index] !== rightParts[index]) {
+            return false;
+        }
+    }
+    return true;
 }

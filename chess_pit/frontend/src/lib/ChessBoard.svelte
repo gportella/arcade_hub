@@ -5,6 +5,7 @@
     import "@lichess-org/chessground/assets/chessground.base.css";
     import "@lichess-org/chessground/assets/chessground.brown.css";
     import "@lichess-org/chessground/assets/chessground.cburnett.css";
+    import { normalizeFen, fenEquals } from "./fen.js";
 
     const game = new Chess();
     /** @type {ReadonlyArray<"q" | "r" | "b" | "n">} */
@@ -36,7 +37,8 @@
     let previousStartingFen = null;
     let previousResetToken = null;
     let previousBoardFen = null;
-    let currentFen = game.fen();
+    let currentFen = normalizeFen(game.fen()) ?? game.fen();
+    let lastLocalFen = null;
     /** @type {"white" | "black"} */
     let movableColor = "white";
     /** @type {import("chessground/types").Dests} */
@@ -83,24 +85,32 @@
         previousStartingFen = startingFen;
         previousResetToken = resetToken;
         previousBoardFen = null;
+        lastLocalFen = null;
         updateState();
     }
 
     function applyExternalFen(fen) {
-        if (!fen) {
+        const normalizedFen = normalizeFen(fen);
+        if (!normalizedFen) {
             return;
         }
-        if (fen === currentFen) {
+        if (fenEquals(normalizedFen, currentFen)) {
+            lastLocalFen = null;
+            return;
+        }
+        if (lastLocalFen && fenEquals(normalizedFen, lastLocalFen)) {
+            lastLocalFen = null;
             return;
         }
         try {
-            game.load(fen);
+            game.load(normalizedFen);
         } catch (error) {
             console.warn("Invalid external FEN supplied", error);
             return;
         }
         lastMove = [];
         previousBoardFen = null;
+        lastLocalFen = null;
         updateState();
     }
 
@@ -168,7 +178,7 @@
 
     function updateState() {
         statusText = computeStatus();
-        currentFen = game.fen();
+        currentFen = normalizeFen(game.fen()) ?? game.fen();
         movableColor = playerTurnColor();
         movableDests = computeDestinations();
         isInCheck = game.inCheck();
@@ -250,7 +260,9 @@
 
         lastMove = [executed.from, executed.to];
         updateState();
-        onMove({ move: executed, fen: game.fen() });
+        lastLocalFen = currentFen;
+        const outboundFen = normalizeFen(game.fen()) ?? game.fen();
+        onMove({ move: executed, fen: outboundFen });
     }
 
     function choosePromotion(piece) {
@@ -320,7 +332,8 @@
             ? [history[history.length - 1].from, history[history.length - 1].to]
             : [];
         updateState();
-        onUndo({ move: undone, fen: game.fen() });
+        lastLocalFen = null;
+        onUndo({ move: undone, fen: normalizeFen(game.fen()) ?? game.fen() });
     }
 
     function reset() {
@@ -330,7 +343,8 @@
         promotionPending = null;
         promotionOptions = [];
         updateState();
-        onReset({ fen: game.fen() });
+        lastLocalFen = null;
+        onReset({ fen: normalizeFen(game.fen()) ?? game.fen() });
     }
 
     export function undoMove() {

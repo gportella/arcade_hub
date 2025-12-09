@@ -20,6 +20,7 @@
     loadStoredToken,
     clearStoredToken,
   } from "./lib/sessionStorage";
+  import { normalizeFen } from "./lib/fen";
 
   const VIEW = Object.freeze({
     LANDING: "landing",
@@ -391,10 +392,15 @@
         : (event ?? {});
     const notation = detail.move?.san;
     const fen = detail.fen;
+    const normalizedFen = normalizeFen(fen) ?? fen;
     if (!notation) return;
     gameError = "";
     try {
-      await submitMove(selectedGame.id, { notation, fen }, accessToken);
+      await submitMove(
+        selectedGame.id,
+        { notation, fen: normalizedFen },
+        accessToken,
+      );
     } catch (error) {
       gameError =
         error instanceof Error ? error.message : "Move could not be recorded.";

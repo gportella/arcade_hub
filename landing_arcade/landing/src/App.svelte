@@ -190,10 +190,7 @@
         display: grid;
         width: 100%;
         gap: clamp(1.25rem, 2.5vw, 2rem);
-        grid-template-columns: repeat(
-            auto-fit,
-            minmax(min(100%, 320px), 1fr)
-        );
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
         align-items: stretch;
         position: relative;
     }

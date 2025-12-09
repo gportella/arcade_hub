@@ -137,17 +137,15 @@ export async function updateUser(userId, payload, token) {
 }
 
 function buildWebSocketUrl(path) {
-    const sanitizedBase = WS_BASE.replace(/\/$/, "");
-    const normalizedPath = path.startsWith("/")
-        ? path
-        : `/${path}`;
-    const absoluteUrl = new URL(`${sanitizedBase}${normalizedPath}`);
-    if (absoluteUrl.protocol === "http:") {
-        absoluteUrl.protocol = "ws:";
-    } else if (absoluteUrl.protocol === "https:") {
-        absoluteUrl.protocol = "wss:";
+    const base = WS_BASE.endsWith("/") ? WS_BASE : `${WS_BASE}/`;
+    const trimmedPath = path.replace(/^\/+/, "");
+    const url = new URL(trimmedPath, base);
+    if (url.protocol === "http:") {
+        url.protocol = "ws:";
+    } else if (url.protocol === "https:") {
+        url.protocol = "wss:";
     }
-    return absoluteUrl.toString();
+    return url.toString();
 }
 
 export function connectToGame(gameId) {

@@ -1,5 +1,5 @@
 <script>
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import LandingView from "./lib/views/LandingView.svelte";
   import GameHubView from "./lib/views/GameHubView.svelte";
   import GamePlayView from "./lib/views/GamePlayView.svelte";
@@ -15,6 +15,11 @@
     resignGame,
     connectToGame,
   } from "./lib/api/client";
+  import {
+    persistToken,
+    loadStoredToken,
+    clearStoredToken,
+  } from "./lib/sessionStorage";
 
   const VIEW = Object.freeze({
     LANDING: "landing",
@@ -222,9 +227,18 @@
     }
     isLandingLoading = true;
     try {
-      accessToken = await login(username, password);
+      const token = await login(username, password);
+      persistToken(token);
+      accessToken = token;
+      const loaded = await loadHub();
+      if (!loaded) {
+        accessToken = "";
+        persistToken("");
+        landingError = hubError || "Unable to finish signing in.";
+        isAuthenticated = false;
+        return;
+      }
       isAuthenticated = true;
-      await loadHub();
       currentView = VIEW.GAMES;
       startHubPolling();
     } catch (error) {
@@ -232,6 +246,7 @@
         error instanceof Error ? error.message : "Unable to sign in.";
       accessToken = "";
       isAuthenticated = false;
+      persistToken("");
     } finally {
       isLandingLoading = false;
     }
@@ -239,7 +254,7 @@
 
   async function loadHub() {
     hubError = "";
-    if (!accessToken) return;
+    if (!accessToken) return false;
     try {
       const hub = await fetchHubOverview(accessToken);
       currentUser = hub.user;
@@ -255,9 +270,11 @@
         avatarUrl: hub.user.avatar_url || "",
         password: "",
       };
+      return true;
     } catch (error) {
       hubError =
         error instanceof Error ? error.message : "Failed to load games.";
+      return false;
     }
   }
 
@@ -453,6 +470,7 @@
     stopHubPolling();
     isAuthenticated = false;
     accessToken = "";
+    clearStoredToken();
     currentUser = null;
     rawSummaryIndex = new Map();
     uiSummaryIndex = new Map();
@@ -470,6 +488,28 @@
     gameError = "";
     currentView = VIEW.LANDING;
   };
+
+  async function restoreSession(token) {
+    accessToken = token;
+    const loaded = await loadHub();
+    if (!loaded) {
+      accessToken = "";
+      clearStoredToken();
+      isAuthenticated = false;
+      currentView = VIEW.LANDING;
+      return;
+    }
+    isAuthenticated = true;
+    currentView = VIEW.GAMES;
+    startHubPolling();
+  }
+
+  onMount(() => {
+    const storedToken = loadStoredToken();
+    if (storedToken) {
+      void restoreSession(storedToken);
+    }
+  });
 
   onDestroy(() => {
     teardownSocket();

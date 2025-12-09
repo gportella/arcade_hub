@@ -136,16 +136,33 @@ export async function updateUser(userId, payload, token) {
     return handleResponse(response);
 }
 
-function buildWebSocketUrl(path) {
-    const base = WS_BASE.endsWith("/") ? WS_BASE : `${WS_BASE}/`;
-    const trimmedPath = path.replace(/^\/+/, "");
-    const url = new URL(trimmedPath, base);
-    if (url.protocol === "http:") {
-        url.protocol = "ws:";
-    } else if (url.protocol === "https:") {
-        url.protocol = "wss:";
+export function composeWebSocketUrl(base, path) {
+    const baseUrl = new URL(base);
+    const baseSegments = baseUrl.pathname
+        .split("/")
+        .filter((segment) => segment.length > 0);
+    const pathSegments = path
+        .split("/")
+        .filter((segment) => segment.length > 0);
+
+    if (pathSegments[0] === "ws" && baseSegments[baseSegments.length - 1] === "ws") {
+        pathSegments.shift();
     }
-    return url.toString();
+
+    const combined = [...baseSegments, ...pathSegments];
+    baseUrl.pathname = combined.length ? `/${combined.join("/")}` : "/";
+
+    if (baseUrl.protocol === "http:") {
+        baseUrl.protocol = "ws:";
+    } else if (baseUrl.protocol === "https:") {
+        baseUrl.protocol = "wss:";
+    }
+
+    return baseUrl.toString();
+}
+
+function buildWebSocketUrl(path) {
+    return composeWebSocketUrl(WS_BASE, path);
 }
 
 export function connectToGame(gameId) {

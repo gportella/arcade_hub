@@ -29,6 +29,89 @@
     PROFILE: "profile",
   });
 
+  // --- Simple router (hash-based) ---
+
+  function routeFor(view, params = {}) {
+    if (view === VIEW.LANDING) return "#/login";
+    if (view === VIEW.GAMES) return "#/games";
+    if (view === VIEW.PROFILE) return "#/profile";
+    if (view === VIEW.PLAY) {
+      const id = params.id ?? selectedGameId;
+      return id ? `#/game/${id}` : "#/games";
+    }
+    return "#/login";
+  }
+
+  function parseRouteFromURL() {
+    const hash = location.hash || "#/login";
+    const parts = hash.slice(1).split("/").filter(Boolean); // remove '#', split
+    const [segment, arg] = parts;
+
+    if (segment === "games") return { view: VIEW.GAMES, params: {} };
+    if (segment === "profile") return { view: VIEW.PROFILE, params: {} };
+    if (segment === "game" && arg) {
+      const idNum = Number(arg);
+      return {
+        view: VIEW.PLAY,
+        params: { id: Number.isFinite(idNum) ? idNum : arg },
+      };
+    }
+    return { view: VIEW.LANDING, params: {} };
+  }
+
+  function navigateTo(view, params = {}) {
+    const url = routeFor(view, params);
+    if (location.hash !== url) {
+      // Changing the hash creates a browser history entry
+      location.hash = url;
+    } else {
+      // If it's the same route, apply immediately
+      void applyFromHash();
+    }
+  }
+
+  async function applyFromHash() {
+    const { view, params } = parseRouteFromURL();
+
+    // Block protected routes when not authenticated
+    if (!isAuthenticated && view !== VIEW.LANDING) {
+      currentView = VIEW.LANDING;
+      return;
+    }
+
+    if (view === VIEW.GAMES) {
+      currentView = VIEW.GAMES;
+      teardownSocket();
+      startHubPolling();
+      void loadHub();
+      return;
+    }
+
+    if (view === VIEW.PROFILE) {
+      currentView = VIEW.PROFILE;
+      stopHubPolling();
+      return;
+    }
+
+    if (view === VIEW.PLAY) {
+      const id = params.id ?? selectedGameId;
+      if (!id) {
+        currentView = VIEW.GAMES;
+        return;
+      }
+      selectedGameId = id;
+      gameError = "";
+      await refreshSelectedGame(id); // load before switching to avoid reactive fallback
+      connectSocket(id);
+      stopHubPolling();
+      currentView = VIEW.PLAY;
+      return;
+    }
+
+    currentView = VIEW.LANDING;
+  }
+  // --- END Simple router (hash-based) ---
+
   const SHOWCASE_FEN =
     "r1bq1rk1/ppp2ppp/2n2n2/2bp4/4P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 2 9";
 
@@ -297,6 +380,7 @@
       }
       isAuthenticated = true;
       currentView = VIEW.GAMES;
+      navigateTo(VIEW.GAMES);
       startHubPolling();
     } catch (error) {
       landingError =
@@ -374,8 +458,9 @@
     gameError = "";
     await refreshSelectedGame(id);
     connectSocket(id);
-    currentView = VIEW.PLAY;
     stopHubPolling();
+    currentView = VIEW.PLAY;
+    navigateTo(VIEW.PLAY, { id });
   }
 
   function handleSocketMessage(gameId, event) {
@@ -529,6 +614,7 @@
   const openProfile = () => {
     currentView = VIEW.PROFILE;
     stopHubPolling();
+    navigateTo(VIEW.PROFILE);
   };
 
   const returnToGames = () => {
@@ -536,6 +622,7 @@
     teardownSocket();
     startHubPolling();
     void loadHub();
+    navigateTo(VIEW.GAMES);
   };
 
   const handleProfileFieldChange = (field, value) => {
@@ -564,6 +651,7 @@
     hubError = "";
     gameError = "";
     currentView = VIEW.LANDING;
+    navigateTo(VIEW.LANDING);
   };
 
   async function restoreSession(token) {
@@ -578,19 +666,32 @@
     }
     isAuthenticated = true;
     currentView = VIEW.GAMES;
+    navigateTo(VIEW.GAMES);
     startHubPolling();
   }
 
   onMount(() => {
     const storedToken = loadStoredToken();
     if (storedToken) {
-      void restoreSession(storedToken);
+      void restoreSession(storedToken).then(() => {
+        // Go to the hash route if present, otherwise default to games
+        if (location.hash) {
+          void applyFromHash();
+        } else {
+          navigateTo(VIEW.GAMES);
+        }
+      });
+    } else {
+      navigateTo(VIEW.LANDING);
     }
+
+    window.addEventListener("hashchange", applyFromHash);
   });
 
   onDestroy(() => {
     teardownSocket();
     stopHubPolling();
+    window.removeEventListener("hashchange", applyFromHash);
   });
 
   $: orderedGames = sortGames(games);

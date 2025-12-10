@@ -1,5 +1,5 @@
 <script>
-    import { onMount } from "svelte";
+    import { onMount, onDestroy } from "svelte";
     import { Chess } from "chess.js";
     import { Chessground } from "svelte5-chessground";
     import "@lichess-org/chessground/assets/chessground.base.css";
@@ -39,6 +39,8 @@
     let previousBoardFen = null;
     let currentFen = normalizeFen(game.fen()) ?? game.fen();
     let lastLocalFen = null;
+    let pendingLocalFen = null;
+    let lastAcknowledgedFen = currentFen;
     /** @type {"white" | "black"} */
     let movableColor = "white";
     /** @type {import("chessground/types").Dests} */
@@ -53,6 +55,7 @@
     let promotionPending = null;
     /** @type {Array<"q" | "r" | "b" | "n">} */
     let promotionOptions = [];
+    let updateTimeout;
 
     /** @type {"white" | "black"} */
     export let orientation = "white";
@@ -86,6 +89,8 @@
         previousResetToken = resetToken;
         previousBoardFen = null;
         lastLocalFen = null;
+        pendingLocalFen = null;
+        lastAcknowledgedFen = normalizeFen(game.fen()) ?? game.fen();
         updateState();
     }
 
@@ -94,24 +99,62 @@
         if (!normalizedFen) {
             return;
         }
-        if (fenEquals(normalizedFen, currentFen)) {
+
+        const currentNormalized = normalizeFen(game.fen());
+        const pendingNormalized = pendingLocalFen
+            ? normalizeFen(pendingLocalFen)
+            : null;
+        const acknowledgedNormalized = lastAcknowledgedFen
+            ? normalizeFen(lastAcknowledgedFen)
+            : null;
+
+        if (
+            pendingNormalized &&
+            acknowledgedNormalized &&
+            fenEquals(normalizedFen, acknowledgedNormalized)
+        ) {
+            return;
+        }
+
+        if (pendingNormalized && fenEquals(normalizedFen, pendingNormalized)) {
+            pendingLocalFen = null;
+            lastAcknowledgedFen = normalizedFen;
             lastLocalFen = null;
             return;
         }
+
+        if (fenEquals(normalizedFen, currentNormalized)) {
+            lastAcknowledgedFen = normalizedFen;
+            lastLocalFen = null;
+            pendingLocalFen = null;
+            return;
+        }
+
         if (lastLocalFen && fenEquals(normalizedFen, lastLocalFen)) {
             lastLocalFen = null;
+            pendingLocalFen = null;
+            lastAcknowledgedFen = normalizedFen;
             return;
         }
+
         try {
             game.load(normalizedFen);
         } catch (error) {
             console.warn("Invalid external FEN supplied", error);
             return;
         }
+
+        // Clear last move for external updates to avoid incorrect highlighting
         lastMove = [];
         previousBoardFen = null;
         lastLocalFen = null;
-        updateState();
+        pendingLocalFen = null;
+        lastAcknowledgedFen = normalizedFen;
+
+        // Use requestAnimationFrame for smooth transition
+        requestAnimationFrame(() => {
+            updateState();
+        });
     }
 
     onMount(() => {
@@ -123,24 +166,76 @@
             });
             resizeObserver.observe(boardElement);
         }
-        return () => {
-            resizeObserver?.disconnect();
-        };
+    });
+
+    onDestroy(() => {
+        clearTimeout(updateTimeout);
+        resizeObserver?.disconnect();
     });
 
     $: resolvedOrientation = orientation === "black" ? "black" : "white";
 
     $: if (hasMounted) {
+        clearTimeout(updateTimeout);
+
         if (resetToken !== previousResetToken) {
             initialiseGame();
         } else if (startingFen !== previousStartingFen) {
             initialiseGame();
-        } else if (positionFen && positionFen !== currentFen) {
-            applyExternalFen(positionFen);
+        } else if (positionFen) {
+            const normalizedPositionFen = normalizeFen(positionFen);
+            const normalizedCurrentFen = normalizeFen(currentFen);
+            const pendingNormalized = pendingLocalFen
+                ? normalizeFen(pendingLocalFen)
+                : null;
+            const acknowledgedNormalized = lastAcknowledgedFen
+                ? normalizeFen(lastAcknowledgedFen)
+                : null;
+
+            if (normalizedPositionFen) {
+                const matchesCurrent = fenEquals(
+                    normalizedPositionFen,
+                    normalizedCurrentFen,
+                );
+                const matchesPending =
+                    pendingNormalized &&
+                    fenEquals(normalizedPositionFen, pendingNormalized);
+                const matchesAcknowledged =
+                    acknowledgedNormalized &&
+                    fenEquals(normalizedPositionFen, acknowledgedNormalized);
+
+                if (matchesPending) {
+                    pendingLocalFen = null;
+                    lastAcknowledgedFen = normalizedPositionFen;
+                    lastLocalFen = null;
+                } else if (matchesCurrent) {
+                    lastAcknowledgedFen = normalizedPositionFen;
+                    if (pendingLocalFen) {
+                        pendingLocalFen = null;
+                        lastLocalFen = null;
+                    }
+                } else if (matchesAcknowledged) {
+                    lastAcknowledgedFen = normalizedPositionFen;
+                    if (pendingLocalFen) {
+                        pendingLocalFen = null;
+                    }
+                    if (lastLocalFen) {
+                        lastLocalFen = null;
+                    }
+                } else {
+                    // Debounce external FEN updates
+                    updateTimeout = setTimeout(() => {
+                        applyExternalFen(positionFen);
+                    }, 10);
+                }
+            }
         }
     }
 
-    $: if (boardApi && hasMounted) {
+    // Watch for boardApi becoming available - only run once
+    let boardApiInitialized = false;
+    $: if (boardApi && hasMounted && !boardApiInitialized) {
+        boardApiInitialized = true;
         updateState();
     }
 
@@ -178,7 +273,7 @@
 
     function updateState() {
         statusText = computeStatus();
-        currentFen = normalizeFen(game.fen()) ?? game.fen();
+        const newFen = normalizeFen(game.fen()) ?? game.fen();
         movableColor = playerTurnColor();
         movableDests = computeDestinations();
         isInCheck = game.inCheck();
@@ -186,8 +281,17 @@
         hasHistory = game.history().length > 0;
 
         const boardReady = Boolean(boardApi);
-        const fenChanged = currentFen !== previousBoardFen;
+        if (!boardReady) {
+            currentFen = newFen;
+            previousBoardFen = null;
+            return;
+        }
+
+        const fenChanged = newFen !== previousBoardFen;
+
+        currentFen = newFen;
         const lastMovePayload = lastMove.length ? lastMove : undefined;
+
         const config = {
             turnColor: movableColor,
             orientation: resolvedOrientation,
@@ -203,15 +307,10 @@
                 enabled: interactive,
             },
             highlight: {
-                lastMove: lastMovePayload,
-                check: Boolean(checkColor),
+                lastMove: true,
+                check: true,
             },
         };
-
-        if (!boardReady) {
-            previousBoardFen = null;
-            return;
-        }
 
         if (fenChanged) {
             config.fen = currentFen;
@@ -259,9 +358,10 @@
         }
 
         lastMove = [executed.from, executed.to];
-        updateState();
-        lastLocalFen = currentFen;
         const outboundFen = normalizeFen(game.fen()) ?? game.fen();
+        lastLocalFen = outboundFen;
+        pendingLocalFen = outboundFen;
+        updateState();
         onMove({ move: executed, fen: outboundFen });
     }
 
@@ -288,6 +388,7 @@
             updateState();
             return;
         }
+
         const legalMoves = game.moves({ verbose: true });
         const candidateMoves = legalMoves.filter(
             (move) => move.from === from && move.to === to,
@@ -331,8 +432,10 @@
         lastMove = history.length
             ? [history[history.length - 1].from, history[history.length - 1].to]
             : [];
-        updateState();
         lastLocalFen = null;
+        pendingLocalFen = null;
+        lastAcknowledgedFen = normalizeFen(game.fen()) ?? game.fen();
+        updateState();
         onUndo({ move: undone, fen: normalizeFen(game.fen()) ?? game.fen() });
     }
 
@@ -342,8 +445,10 @@
         showPromotionDialog = false;
         promotionPending = null;
         promotionOptions = [];
-        updateState();
         lastLocalFen = null;
+        pendingLocalFen = null;
+        lastAcknowledgedFen = normalizeFen(game.fen()) ?? game.fen();
+        updateState();
         onReset({ fen: normalizeFen(game.fen()) ?? game.fen() });
     }
 
@@ -356,13 +461,6 @@
 
     export function resetPosition() {
         reset();
-    }
-
-    $: if (hasMounted) {
-        const _interactive = interactive;
-        if (_interactive !== undefined) {
-            updateState();
-        }
     }
 </script>
 
@@ -454,7 +552,7 @@
 
     .board {
         position: relative;
-        width: min(100%, 720px);
+        width: min(100%, 860px);
         aspect-ratio: 1;
         margin-inline: auto;
         box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);

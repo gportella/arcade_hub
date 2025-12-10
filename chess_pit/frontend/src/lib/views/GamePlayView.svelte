@@ -1,4 +1,12 @@
 <script>
+    import { onMount, onDestroy } from "svelte";
+
+    let logId = 0;
+    function stamp() {
+        return (++logId).toString().padStart(4, "0");
+    }
+    onMount(() => console.debug(`[${stamp()}] [mount] ChessBoard`));
+    onDestroy(() => console.debug(`[${stamp()}] [destroy] ChessBoard`));
     import ChessBoard from "../ChessBoard.svelte";
 
     /** @type {any} */
@@ -16,6 +24,11 @@
         game?.status === "active" || game?.status === "pending";
     let boardRef;
     let yourTurn = false;
+
+    // Track the last FEN to prevent unnecessary updates
+    let lastGameFen = null;
+    let stablePositionFen = null;
+    let fenUpdateCounter = 0;
 
     const handleUndoClick = () => {
         if (!yourTurn) return;
@@ -37,6 +50,12 @@
     $: resultLabel = game?.resultDisplay ?? null;
     $: summary = game?.summary ?? "";
     $: pgn = game?.pgn ?? "";
+
+    // Only update stablePositionFen when game.fen actually changes
+    $: if (game?.fen && game.fen !== lastGameFen) {
+        lastGameFen = game.fen;
+        stablePositionFen = game.fen;
+    }
 </script>
 
 {#if game}
@@ -70,7 +89,7 @@
             <ChessBoard
                 bind:this={boardRef}
                 startingFen={game.initialFen}
-                positionFen={game.fen}
+                positionFen={stablePositionFen}
                 resetToken={game.id}
                 orientation={game.yourColor}
                 {onMove}
@@ -82,14 +101,14 @@
             {#if active}
                 <div class="board-controls" aria-label="Board controls">
                     <!--
-                    <button
-                        class="pill"
-                        on:click={handleUndoClick}
-                        disabled={!yourTurn}
-                    >
-                        Undo
-                    </button>
-                    -->
+                <button
+                class="pill"
+                on:click={handleUndoClick}
+                disabled={!yourTurn}
+                >
+                Undo
+                </button>
+                -->
                     <button class="pill resign" on:click={handleResignClick}>
                         Resign
                     </button>
@@ -135,7 +154,11 @@
         display: flex;
         flex-direction: column;
         gap: clamp(1rem, 3vw, 1.5rem);
-        padding: clamp(0.75rem, 3vw, 1.25rem) clamp(1rem, 4vw, 2.25rem) 2.5rem;
+        padding: clamp(0.75rem, 3vw, 1.25rem) clamp(1rem, 2.5vw + 1rem, 2.5rem)
+            2.5rem;
+        width: 100%;
+        max-width: 1100px;
+        margin-inline: auto;
     }
 
     .play.empty {
@@ -144,10 +167,12 @@
     }
 
     .play-header {
-        display: flex;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        grid-template-rows: auto auto;
         align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
+        column-gap: 1.5rem;
+        row-gap: 0.75rem;
     }
 
     .match-overview {
@@ -155,6 +180,23 @@
         flex-direction: column;
         gap: 0.6rem;
         align-items: flex-start;
+        flex: 1 1 auto;
+        min-width: 0;
+        width: 100%;
+        grid-column: 1 / span 3;
+        grid-row: 2;
+    }
+
+    .play-header .ghost {
+        grid-column: 1;
+        grid-row: 1;
+        justify-self: start;
+    }
+
+    .play-header .secondary.micro {
+        grid-column: 3;
+        grid-row: 1;
+        justify-self: end;
     }
 
     .opponent {
@@ -175,18 +217,30 @@
         margin: 0;
         font-size: clamp(1.6rem, 4vw, 2.1rem);
         color: #f8fafc;
+        max-width: 100%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .meta {
         margin: 0.25rem 0 0;
         color: rgba(226, 232, 240, 0.72);
         font-size: 0.95rem;
+        max-width: 100%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .timestamp {
         margin: 0;
         color: rgba(148, 163, 184, 0.75);
         font-size: 0.85rem;
+        max-width: 100%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .board-section {
@@ -241,7 +295,7 @@
     .game-info {
         display: grid;
         gap: 1rem;
-        width: min(100%, 720px);
+        width: min(100%, clamp(640px, 68vw, 940px));
         margin: 0 auto;
     }
 
@@ -309,13 +363,36 @@
         }
 
         .play-header {
-            flex-wrap: wrap;
-            gap: 0.75rem;
+            grid-template-columns: auto auto;
+            grid-template-rows: repeat(2, auto);
+            column-gap: 0.75rem;
+            row-gap: 0.75rem;
+        }
+
+        .play-header .ghost {
+            grid-column: 1;
+            grid-row: 1;
+        }
+
+        .play-header .secondary.micro {
+            grid-column: 2;
+            grid-row: 1;
+            justify-self: end;
         }
 
         .match-overview {
             width: 100%;
-            order: 3;
+            max-width: none;
+            grid-column: 1 / span 2;
+            grid-row: 2;
+        }
+
+        .match-overview h1,
+        .meta,
+        .timestamp {
+            white-space: normal;
+            overflow: visible;
+            text-overflow: unset;
         }
 
         .board-section {

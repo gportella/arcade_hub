@@ -97,6 +97,7 @@
                 showStatus={false}
                 showControls={false}
                 interactive={yourTurn}
+                {pgn}
             />
             {#if active}
                 <div class="board-controls" aria-label="Board controls">

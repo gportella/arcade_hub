@@ -113,7 +113,7 @@
   // --- END Simple router (hash-based) ---
 
   const SHOWCASE_FEN =
-    "r1bq1rk1/ppp2ppp/2n2n2/2bp4/4P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 2 9";
+    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
   /** @type {"landing" | "games" | "play" | "profile"} */
   let currentView = VIEW.LANDING;

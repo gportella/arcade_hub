@@ -1,5 +1,8 @@
 <script>
+    import { onMount, onDestroy } from "svelte";
+    import { Chess } from "chess.js";
     import ChessBoard from "../ChessBoard.svelte";
+    import { createMiniEngine } from "../engine/miniEngine.js";
 
     export let showcaseFen = "";
     export let onPlay = (_credentials) => {};
@@ -9,6 +12,155 @@
 
     let username = "";
     let password = "";
+
+    const loginGame = new Chess();
+    let miniEngine = null;
+    let boardPosition = showcaseFen;
+    let isThinking = false;
+    let previousShowcase = null;
+    let isActive = true;
+    let gameStatus = "";
+    let isGameOver = false;
+
+    function describeSide(color) {
+        return color === "w" ? "White" : "Black";
+    }
+
+    function evaluateGameOutcome() {
+        if (loginGame.isCheckmate()) {
+            const winner = loginGame.turn() === "w" ? describeSide("b") : describeSide("w");
+            gameStatus = `${winner} wins by checkmate`;
+            isGameOver = true;
+            return;
+        }
+
+        if (loginGame.isStalemate()) {
+            gameStatus = "Draw by stalemate";
+            isGameOver = true;
+            return;
+        }
+
+        if (loginGame.isThreefoldRepetition()) {
+            gameStatus = "Draw by repetition";
+            isGameOver = true;
+            return;
+        }
+
+        if (loginGame.isInsufficientMaterial()) {
+            gameStatus = "Draw by insufficient material";
+            isGameOver = true;
+            return;
+        }
+
+        if (loginGame.isDraw()) {
+            gameStatus = "Draw";
+            isGameOver = true;
+            return;
+        }
+
+        gameStatus = "";
+        isGameOver = false;
+    }
+
+    function initialiseMiniGame() {
+        miniEngine = createMiniEngine();
+        miniEngine.reset();
+        try {
+            if (showcaseFen) {
+                loginGame.load(showcaseFen);
+            } else {
+                loginGame.reset();
+            }
+        } catch (_error) {
+            loginGame.reset();
+        }
+        boardPosition = loginGame.fen();
+        previousShowcase = showcaseFen;
+        gameStatus = "";
+        isGameOver = false;
+        evaluateGameOutcome();
+    }
+
+    onMount(() => {
+        initialiseMiniGame();
+    });
+
+    onDestroy(() => {
+        isActive = false;
+    });
+
+    $: if (miniEngine && showcaseFen !== previousShowcase) {
+        initialiseMiniGame();
+    }
+
+    const toUci = (move) => `${move.from}${move.to}${move.promotion ?? ""}`;
+
+    async function handleBoardMove(event) {
+        if (!miniEngine || isThinking || isGameOver) {
+            return;
+        }
+
+        const { move } = event;
+        if (!move) {
+            return;
+        }
+
+        const playerMoveUci = toUci(move);
+        const executed = loginGame.move(move);
+        if (!executed) {
+            return;
+        }
+
+        try {
+            miniEngine.applyMove(playerMoveUci);
+        } catch (_error) {
+            loginGame.undo();
+            boardPosition = loginGame.fen();
+            evaluateGameOutcome();
+            return;
+        }
+
+        boardPosition = loginGame.fen();
+        evaluateGameOutcome();
+        if (isGameOver || !isActive) {
+            return;
+        }
+
+        isThinking = true;
+        try {
+            const reply = await miniEngine.think();
+            if (!reply || !isActive) {
+                evaluateGameOutcome();
+                return;
+            }
+
+            const replyMove = {
+                from: reply.slice(0, 2),
+                to: reply.slice(2, 4),
+            };
+            if (reply.length > 4) {
+                replyMove.promotion = reply[4];
+            }
+
+            const executed = loginGame.move(replyMove);
+            if (executed) {
+                boardPosition = loginGame.fen();
+                evaluateGameOutcome();
+            } else {
+                try {
+                    loginGame.load(boardPosition);
+                } catch (_error) {
+                    loginGame.reset();
+                    boardPosition = loginGame.fen();
+                }
+                evaluateGameOutcome();
+            }
+        } finally {
+            if (isActive) {
+                isThinking = false;
+            }
+        }
+    }
 
     const submit = () => {
         onPlay({ username, password });
@@ -32,9 +184,15 @@
         <div class="landing-board-shell">
             <ChessBoard
                 startingFen={showcaseFen}
+                positionFen={boardPosition}
                 showStatus={false}
                 showControls={false}
+                interactive={!isThinking && !isGameOver}
+                onMove={handleBoardMove}
             />
+            {#if gameStatus}
+                <p class="landing-status" role="status" aria-live="polite">{gameStatus}</p>
+            {/if}
         </div>
         <form class="landing-form" on:submit|preventDefault={submit}>
             <label for="username">Username</label>
@@ -128,7 +286,10 @@
 
     .landing-board-shell {
         display: flex;
+        flex-direction: column;
         justify-content: center;
+        align-items: center;
+        gap: 0.75rem;
     }
 
     .landing-card :global(.chess-widget) {
@@ -136,8 +297,14 @@
     }
 
     .landing-card :global(.board) {
-        width: min(320px, 78vw);
+        width: min(400px, 100%);
         margin-inline: auto;
+    }
+
+    .landing-status {
+        margin: 0;
+        font-size: 0.9rem;
+        color: rgba(226, 232, 240, 0.85);
     }
 
     .landing-actions {

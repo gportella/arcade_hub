@@ -28,7 +28,10 @@
 
     function evaluateGameOutcome() {
         if (loginGame.isCheckmate()) {
-            const winner = loginGame.turn() === "w" ? describeSide("b") : describeSide("w");
+            const winner =
+                loginGame.turn() === "w"
+                    ? describeSide("b")
+                    : describeSide("w");
             gameStatus = `${winner} wins by checkmate`;
             isGameOver = true;
             return;
@@ -191,7 +194,9 @@
                 onMove={handleBoardMove}
             />
             {#if gameStatus}
-                <p class="landing-status" role="status" aria-live="polite">{gameStatus}</p>
+                <p class="landing-status" role="status" aria-live="polite">
+                    {gameStatus}
+                </p>
             {/if}
         </div>
         <form class="landing-form" on:submit|preventDefault={submit}>

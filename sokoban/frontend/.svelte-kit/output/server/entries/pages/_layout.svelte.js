@@ -1,0 +1,1 @@
+import{h as t,d as e}from"../../chunks/index.js";function a(a,l){t(a,(t=>{t.title="<title>Phaser Svelte Template</title>"})),a.out+="\x3c!----\x3e",e(a,l,"default",{}),a.out+="\x3c!----\x3e"}export{a as default};

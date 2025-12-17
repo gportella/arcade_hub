@@ -11,6 +11,7 @@
     fetchGameDetail,
     createGame,
     submitMove,
+    requestEngineMove,
     updateUser,
     resignGame,
     connectToGame,
@@ -138,6 +139,7 @@
   let socket = null;
   let hubUser = null;
   let hubPollTimer = null;
+  let engineMovePending = false;
   const HUB_POLL_INTERVAL = 15000;
 
   function fallbackAvatar(username = "player") {
@@ -171,13 +173,20 @@
         nickname: "Unknown",
         avatar: fallbackAvatar("unknown"),
         title: "",
+        isEngine: false,
+        engineKey: null,
       };
     }
+    const nickname = player.display_name || player.username;
     return {
       id: player.id,
-      nickname: player.username,
-      avatar: player.avatar_url || fallbackAvatar(player.username),
-      title: "",
+      nickname,
+      avatar:
+        player.avatar_url ||
+        fallbackAvatar(nickname || player.username || "player"),
+      title: player.is_engine ? "Engine" : "",
+      isEngine: Boolean(player.is_engine),
+      engineKey: player.engine_key ?? null,
     };
   }
 
@@ -406,7 +415,14 @@
         uiSummaryIndex.set(summary.id, mapGameSummary(summary));
       }
       games = Array.from(uiSummaryIndex.values());
-      availableOpponents = hub.opponents.map(toOpponent);
+      availableOpponents = Array.isArray(hub.opponents)
+        ? hub.opponents.map(toOpponent).sort((a, b) => {
+            if (a.isEngine !== b.isEngine) {
+              return a.isEngine ? 1 : -1;
+            }
+            return a.nickname.localeCompare(b.nickname);
+          })
+        : [];
       profileDraft = {
         avatarUrl: hub.user.avatar_url || "",
         password: "",
@@ -425,6 +441,7 @@
     try {
       const detail = await fetchGameDetail(gameId, accessToken);
       selectedGame = mapGameDetail(detail);
+      await maybeTriggerEngineMove(selectedGame);
     } catch (error) {
       gameError =
         error instanceof Error ? error.message : "Failed to load game.";
@@ -485,12 +502,37 @@
     if (isMove) {
       if (payload.player_id === currentUser?.id) {
         applySelfMoveUpdate(payload);
+        void maybeTriggerEngineMove(selectedGame);
         return;
       }
       void refreshSelectedGame(gameId);
       return;
     }
     void refreshSelectedGame(gameId);
+  }
+
+  async function maybeTriggerEngineMove(game) {
+    if (!game || !isAuthenticated || !accessToken) return;
+    if (!game.opponent?.isEngine) return;
+    if (game.status === "completed" || game.status === "aborted") return;
+    if (game.turn === game.yourColor) return;
+    if (engineMovePending) return;
+    const engineKey = game.opponent.engineKey;
+    if (!engineKey) return;
+    engineMovePending = true;
+    try {
+      await requestEngineMove(game.id, { engine_key: engineKey }, accessToken);
+      if (!socket) {
+        const detail = await fetchGameDetail(game.id, accessToken);
+        selectedGame = mapGameDetail(detail);
+        await loadHub();
+      }
+    } catch (error) {
+      gameError =
+        error instanceof Error ? error.message : "Engine move request failed.";
+    } finally {
+      engineMovePending = false;
+    }
   }
 
   const toggleNewGameForm = () => {
@@ -525,7 +567,9 @@
             white_player_id: opponent.id,
             black_player_id: currentUser.id,
           };
-    payload.summary = "Friendly challenge";
+    payload.summary = opponent.isEngine
+      ? `Engine match vs ${opponent.nickname}`
+      : "Friendly challenge";
     try {
       const created = await createGame(payload, accessToken);
       await loadHub();

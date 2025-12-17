@@ -37,6 +37,8 @@ class UserRead(BaseModel):
     id: int
     username: str
     is_admin: bool
+    is_engine: bool
+    engine_key: Optional[str]
     avatar_url: Optional[str]
     games_played: int
     games_won: int
@@ -101,7 +103,10 @@ class GameDetail(GameRead):
 class OpponentSummary(BaseModel):
     id: int
     username: str
+    display_name: str
     avatar_url: Optional[str]
+    is_engine: bool = False
+    engine_key: Optional[str] = None
 
 
 class HubGameSummary(BaseModel):
@@ -125,6 +130,7 @@ class HubResponse(BaseModel):
     user: UserRead
     games: list[HubGameSummary]
     opponents: list[OpponentSummary]
+    engines: list[EngineInfo]
 
 
 class GameFinishRequest(BaseModel):
@@ -134,3 +140,21 @@ class GameFinishRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     service: str = "chess-pit-backend"
+
+
+class EngineInfo(BaseModel):
+    key: str
+    name: str
+
+
+class EngineMoveRequest(BaseModel):
+    engine_key: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    depth: Optional[int] = Field(default=None, ge=1, le=64)
+
+
+class EngineMoveResponse(BaseModel):
+    engine: EngineInfo
+    depth: int
+    uci: str
+    san: str
+    fen: str

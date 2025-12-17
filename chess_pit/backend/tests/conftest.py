@@ -6,23 +6,23 @@ import json
 import os
 from collections.abc import AsyncIterator, Iterator
 
+import chess
 import pytest
 import pytest_asyncio
-import chess
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from chess_backend import db as db_module
+from chess_backend.api import routes_games
 from chess_backend.config import get_settings
-from chess_backend.crud.users import get_user_by_username
+from chess_backend.crud.users import get_user_by_engine_key, get_user_by_username
 from chess_backend.db import get_session
 from chess_backend.main import app
 from chess_backend.models import User
 from chess_backend.security import hash_password
 from chess_backend.services import engine_runner
-from chess_backend.api import routes_games
 
 
 @pytest.fixture(autouse=True)
@@ -91,7 +91,21 @@ def engine() -> Iterator[Engine]:
                     is_admin=True,
                 )
                 session.add(admin_user)
-                session.commit()
+
+            settings = get_settings()
+            for spec in settings.engine_specs:
+                if get_user_by_engine_key(session, spec.key):
+                    continue
+                engine_user = User(
+                    username=f"engine_{spec.key}",
+                    hashed_password=hash_password("EnginePass123!"),
+                    is_admin=False,
+                    is_engine=True,
+                    engine_key=spec.key,
+                )
+                session.add(engine_user)
+
+            session.commit()
         yield engine
     finally:
         SQLModel.metadata.drop_all(engine)

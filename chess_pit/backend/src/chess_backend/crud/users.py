@@ -13,6 +13,11 @@ def get_user_by_username(session: Session, username: str) -> Optional[User]:
     return session.exec(statement).first()
 
 
+def get_user_by_engine_key(session: Session, engine_key: str) -> Optional[User]:
+    statement = select(User).where(User.engine_key == engine_key)
+    return session.exec(statement).first()
+
+
 def create_user(session: Session, user: User) -> User:
     session.add(user)
     session.commit()

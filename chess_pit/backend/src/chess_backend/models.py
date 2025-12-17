@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Column, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -35,6 +35,14 @@ class User(UserBase, table=True):  # type: ignore[call-arg]
     id: Optional[int] = Field(default=None, primary_key=True)
     hashed_password: str
     is_admin: bool = Field(default=False)
+    is_engine: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="0"),
+    )
+    engine_key: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(50), unique=True, nullable=True),
+    )
     games_played: int = Field(default=0, ge=0)
     games_won: int = Field(default=0, ge=0)
     games_lost: int = Field(default=0, ge=0)

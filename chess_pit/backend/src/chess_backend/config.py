@@ -1,11 +1,20 @@
 """Application configuration and settings."""
 
+import json
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
+
+
+class EngineSpec(BaseModel):
+    """Declarative information about a configured engine binary."""
+
+    key: str = Field(min_length=1, max_length=50)
+    name: str = Field(min_length=1, max_length=100)
+    binary: str = Field(min_length=1)
 
 
 class Settings(BaseSettings):
@@ -25,6 +34,12 @@ class Settings(BaseSettings):
         ],
         alias="CHESS_CORS_ORIGINS",
     )
+    engine_specs: List[EngineSpec] = Field(
+        default_factory=lambda: [EngineSpec(key="stockfish", name="Stockfish", binary="stockfish")],
+        alias="CHESS_ENGINE_SPECS",
+    )
+    engine_timeout_seconds: float = Field(default=5.0, alias="CHESS_ENGINE_TIMEOUT_SECONDS", gt=0)
+    engine_default_depth: int = Field(default=12, alias="CHESS_ENGINE_DEFAULT_DEPTH", ge=1, le=64)
 
     model_config = {
         "env_file": ".env",
@@ -32,6 +47,21 @@ class Settings(BaseSettings):
         "env_prefix": "",
         "extra": "ignore",
     }
+
+    @field_validator("engine_specs", mode="before")
+    @classmethod
+    def _parse_engine_specs(cls, value):
+        if value is None or isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                decoded = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError("CHESS_ENGINE_SPECS must be valid JSON") from exc
+            return decoded
+        if isinstance(value, dict):
+            return [value]
+        raise TypeError("Unsupported type for engine specs configuration")
 
 
 @lru_cache

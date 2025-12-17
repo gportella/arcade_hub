@@ -110,6 +110,15 @@ export async function submitMove(gameId, payload, token) {
     return handleResponse(response);
 }
 
+export async function requestEngineMove(gameId, payload, token) {
+    const response = await fetch(`${API_BASE}/games/${gameId}/engine-move`, {
+        method: "POST",
+        headers: buildJsonHeaders(token),
+        body: JSON.stringify(payload ?? {}),
+    });
+    return handleResponse(response);
+}
+
 export async function finishGame(gameId, payload, token) {
     const response = await fetch(`${API_BASE}/games/${gameId}/finish`, {
         method: "POST",

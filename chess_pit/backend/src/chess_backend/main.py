@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import (
     routes_auth,
+    routes_engines,
     routes_games,
     routes_health,
     routes_hub,
@@ -41,5 +42,6 @@ app.include_router(routes_health.router)
 app.include_router(routes_auth.router)
 app.include_router(routes_users.router)
 app.include_router(routes_games.router)
+app.include_router(routes_engines.router)
 app.include_router(routes_hub.router)
 app.include_router(routes_realtime.router)

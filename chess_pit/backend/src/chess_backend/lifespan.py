@@ -6,6 +6,7 @@ import logging
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -14,7 +15,7 @@ from alembic import command
 from alembic.config import Config as AlembicConfig
 
 from .config import Settings, get_settings
-from .crud.users import get_user_by_username
+from .crud.users import get_user_by_engine_key, get_user_by_username
 from .db import init_db, session_context
 from .models import User
 from .security import hash_password
@@ -35,6 +36,7 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
         _run_migrations(settings)
     init_db()
     _bootstrap_admin(settings)
+    _bootstrap_engines(settings)
     yield
 
 
@@ -78,3 +80,39 @@ def _bootstrap_admin(settings: Settings) -> None:
         session.add(admin)
         session.commit()
         log.info("Created admin user '%s'", settings.admin_username)
+
+
+def _bootstrap_engines(settings: Settings) -> None:
+    if not settings.engine_specs:
+        return
+
+    with session_context() as session:
+        for spec in settings.engine_specs:
+            username = f"engine_{spec.key}"
+            engine_user = get_user_by_engine_key(session, spec.key)
+            if engine_user is None:
+                engine_user = User(
+                    username=username,
+                    hashed_password=hash_password(secrets.token_urlsafe(32)),
+                    is_admin=False,
+                    is_engine=True,
+                    engine_key=spec.key,
+                    avatar_url=None,
+                )
+                session.add(engine_user)
+                continue
+
+            updated = False
+            if engine_user.username != username:
+                engine_user.username = username
+                updated = True
+            if not engine_user.is_engine:
+                engine_user.is_engine = True
+                updated = True
+            if engine_user.engine_key != spec.key:
+                engine_user.engine_key = spec.key
+                updated = True
+            if updated:
+                engine_user.updated_at = datetime.utcnow()
+                session.add(engine_user)
+        session.commit()

@@ -3,16 +3,30 @@
 from datetime import datetime
 from typing import Annotated
 
+import chess
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
+from starlette.concurrency import run_in_threadpool
 
 from ..api.deps import get_current_user
+from ..config import EngineSpec, Settings, get_settings
 from ..crud.games import append_move, create_game, finish_game, get_game, list_games
 from ..crud.users import update_user_stats
 from ..db import get_session
 from ..models import DEFAULT_START_FEN, Game, GameResult, GameStatus, Move, User
 from ..realtime import broadcast_game_finished, broadcast_move
-from ..schemas import GameCreate, GameDetail, GameFinishRequest, GameRead, MoveCreate, MoveRead
+from ..schemas import (
+    EngineInfo,
+    EngineMoveRequest,
+    EngineMoveResponse,
+    GameCreate,
+    GameDetail,
+    GameFinishRequest,
+    GameRead,
+    MoveCreate,
+    MoveRead,
+)
+from ..services.engine_runner import EngineMoveError, EngineProcessError, compute_best_move
 from ..utils.fen import active_color, fen_hash, normalize_fen
 
 router = APIRouter(prefix="/games", tags=["games"])
@@ -56,6 +70,20 @@ def _finalize_game(
 
     session.refresh(game)
     return game
+
+
+def _resolve_engine_spec(engine_key: str | None, settings: Settings | None = None) -> EngineSpec:
+    settings = settings or get_settings()
+    selected_key = engine_key or (settings.engine_specs[0].key if settings.engine_specs else None)
+    if selected_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No engines configured",
+        )
+    for spec in settings.engine_specs:
+        if spec.key == selected_key:
+            return spec
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engine not found")
 
 
 @router.post("", response_model=GameRead, status_code=status.HTTP_201_CREATED)
@@ -187,6 +215,111 @@ async def record_move(
         await broadcast_game_finished(game)
 
     return MoveRead.model_validate(move)
+
+
+@router.post("/{game_id}/engine-move", response_model=EngineMoveResponse)
+async def request_engine_move(
+    game_id: int,
+    payload: EngineMoveRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> EngineMoveResponse:
+    game = get_game(session, game_id)
+    if game is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
+
+    if not current_user.is_admin and current_user.id not in {
+        game.white_player_id,
+        game.black_player_id,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access engine for this game",
+        )
+
+    try:
+        board = chess.Board(game.current_fen)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invalid game position",
+        ) from exc
+
+    if board.is_game_over():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Game is finished; no legal moves available",
+        )
+
+    session.refresh(game, attribute_names=["white_player", "black_player"])
+    engine_player: User | None = None
+    if game.white_player and game.white_player.is_engine:
+        engine_player = game.white_player
+    elif game.black_player and game.black_player.is_engine:
+        engine_player = game.black_player
+
+    settings = get_settings()
+    desired_engine_key = payload.engine_key or (
+        engine_player.engine_key if engine_player and engine_player.engine_key else None
+    )
+    spec = _resolve_engine_spec(desired_engine_key, settings)
+    if engine_player and engine_player.engine_key and engine_player.engine_key != spec.key:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Requested engine does not match game configuration",
+        )
+
+    depth = payload.depth or settings.engine_default_depth
+    depth = max(1, min(depth, 64))
+
+    try:
+        engine_move = await run_in_threadpool(
+            compute_best_move,
+            spec,
+            board,
+            depth=depth,
+            timeout=settings.engine_timeout_seconds,
+        )
+    except EngineProcessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    except EngineMoveError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    if engine_player and engine_player.id is not None:
+        move = Move(
+            game_id=game.id,
+            player_id=engine_player.id,
+            move_number=game.moves_count + 1,
+            notation=engine_move.san,
+            played_at=datetime.utcnow(),
+            fen=engine_move.fen,
+        )
+        move = append_move(session, game, move)
+        await broadcast_move(game, move)
+
+        notation = move.notation or ""
+        if notation.endswith("#"):
+            winner = GameResult.white if move.player_id == game.white_player_id else GameResult.black
+            winner_label = "White" if winner == GameResult.white else "Black"
+            loser_label = "Black" if winner == GameResult.white else "White"
+            game = _finalize_game(
+                session,
+                game,
+                winner,
+                summary_note=f"{winner_label} checkmated {loser_label}",
+            )
+            await broadcast_game_finished(game)
+
+    return EngineMoveResponse(
+        engine=EngineInfo(key=spec.key, name=spec.name),
+        depth=depth,
+        uci=engine_move.uci,
+        san=engine_move.san,
+        fen=engine_move.fen,
+    )
 
 
 @router.post("/{game_id}/resign", response_model=GameRead)

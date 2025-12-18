@@ -41,6 +41,7 @@ async def test_list_engines(client):
     payload = response.json()
     assert payload
     assert payload[0]["key"] == "mock"
+    assert payload[0]["default_depth"] == 3
 
 
 @pytest.mark.asyncio
@@ -125,6 +126,7 @@ async def test_engine_game_records_move(client):
     assert engine_move_response.status_code == 200
     engine_move = engine_move_response.json()
     assert engine_move["engine"]["key"] == "mock"
+    assert engine_move["depth"] == 3
 
     detail_response = await client.get(f"/games/{game['id']}", headers=headers)
     assert detail_response.status_code == 200

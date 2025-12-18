@@ -112,7 +112,10 @@ async def get_hub_overview(
     opponent_summaries = [_make_opponent_summary(opponent, settings) for opponent in opponents]
 
     user_read = UserRead.model_validate(current_user)
-    engine_infos = [EngineInfo(key=spec.key, name=spec.name) for spec in settings.engine_specs]
+    engine_infos = [
+        EngineInfo(key=spec.key, name=spec.name, default_depth=spec.default_depth)
+        for spec in settings.engine_specs
+    ]
     return HubResponse(
         user=user_read,
         games=game_summaries,

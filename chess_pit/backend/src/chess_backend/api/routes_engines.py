@@ -19,4 +19,7 @@ async def list_engines(
     _: Annotated[User, Depends(get_current_user)],
 ) -> list[EngineInfo]:
     settings = get_settings()
-    return [EngineInfo(key=spec.key, name=spec.name) for spec in settings.engine_specs]
+    return [
+        EngineInfo(key=spec.key, name=spec.name, default_depth=spec.default_depth)
+        for spec in settings.engine_specs
+    ]

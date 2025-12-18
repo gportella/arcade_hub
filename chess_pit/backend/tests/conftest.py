@@ -40,6 +40,7 @@ def configure_settings(tmp_path) -> Iterator[None]:
                 "key": "mock",
                 "name": "Mock Engine",
                 "binary": "mock-binary",
+                "default_depth": 3,
             }
         ]
     )
@@ -49,7 +50,7 @@ def configure_settings(tmp_path) -> Iterator[None]:
     original_compute = engine_runner.compute_best_move
     original_route_compute = routes_games.compute_best_move
 
-    def _fake_compute(spec, board, *, depth, timeout):
+    def _fake_compute(spec, board, *, depth):
         """Return a deterministic opening move for tests."""
 
         trial_board = board.copy()

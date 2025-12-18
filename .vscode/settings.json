@@ -1,0 +1,9 @@
+{
+  "python.testing.pytestArgs": [
+    "chess_pit/backend/tests"
+  ],
+  "python.testing.cwd": "chess_pit/backend",
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.nosetestsEnabled": false
+}

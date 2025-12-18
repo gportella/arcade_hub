@@ -35,14 +35,13 @@ def compute_best_move(
     board: chess.Board,
     *,
     depth: int,
-    timeout: float,
 ) -> EngineMove:
     """Return the best move suggested by *spec* for *board* at a fixed depth."""
 
     try:
-        with chess.engine.SimpleEngine.popen_uci(spec.binary, timeout=timeout) as engine:
+        with chess.engine.SimpleEngine.popen_uci(spec.binary) as engine:
             limit = chess.engine.Limit(depth=depth)
-            result = engine.play(board, limit, timeout=timeout)
+            result = engine.play(board, limit)
     except FileNotFoundError as exc:
         raise EngineProcessError(f"Engine binary '{spec.binary}' not found") from exc
     except chess.engine.EngineTerminatedError as exc:

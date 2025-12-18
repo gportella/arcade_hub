@@ -528,8 +528,17 @@
         await loadHub();
       }
     } catch (error) {
-      gameError =
+      const rawMessage =
         error instanceof Error ? error.message : "Engine move request failed.";
+      if (rawMessage.includes("Engine binary")) {
+        gameError =
+          "Chess engine unavailable. Install the required host binary (e.g. skaks) and retry.";
+      } else if (rawMessage.includes("Engine terminated")) {
+        gameError =
+          "Chess engine terminated unexpectedly. Please try again soon.";
+      } else {
+        gameError = rawMessage;
+      }
     } finally {
       engineMovePending = false;
     }

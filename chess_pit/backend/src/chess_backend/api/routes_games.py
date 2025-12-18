@@ -269,7 +269,7 @@ async def request_engine_move(
             detail="Requested engine does not match game configuration",
         )
 
-    depth = payload.depth or settings.engine_default_depth
+    depth = payload.depth or spec.default_depth or settings.engine_default_depth
     depth = max(1, min(depth, 64))
 
     try:
@@ -278,7 +278,6 @@ async def request_engine_move(
             spec,
             board,
             depth=depth,
-            timeout=settings.engine_timeout_seconds,
         )
     except EngineProcessError as exc:
         raise HTTPException(
@@ -302,7 +301,9 @@ async def request_engine_move(
 
         notation = move.notation or ""
         if notation.endswith("#"):
-            winner = GameResult.white if move.player_id == game.white_player_id else GameResult.black
+            winner = (
+                GameResult.white if move.player_id == game.white_player_id else GameResult.black
+            )
             winner_label = "White" if winner == GameResult.white else "Black"
             loser_label = "Black" if winner == GameResult.white else "White"
             game = _finalize_game(
@@ -314,7 +315,7 @@ async def request_engine_move(
             await broadcast_game_finished(game)
 
     return EngineMoveResponse(
-        engine=EngineInfo(key=spec.key, name=spec.name),
+        engine=EngineInfo(key=spec.key, name=spec.name, default_depth=spec.default_depth),
         depth=depth,
         uci=engine_move.uci,
         san=engine_move.san,

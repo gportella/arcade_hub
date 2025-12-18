@@ -145,6 +145,7 @@ class HealthResponse(BaseModel):
 class EngineInfo(BaseModel):
     key: str
     name: str
+    default_depth: Optional[int] = None
 
 
 class EngineMoveRequest(BaseModel):

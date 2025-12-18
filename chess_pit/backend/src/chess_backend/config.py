@@ -15,6 +15,7 @@ class EngineSpec(BaseModel):
     key: str = Field(min_length=1, max_length=50)
     name: str = Field(min_length=1, max_length=100)
     binary: str = Field(min_length=1)
+    default_depth: Optional[int] = Field(default=None, ge=1, le=64)
 
 
 class Settings(BaseSettings):
@@ -35,10 +36,12 @@ class Settings(BaseSettings):
         alias="CHESS_CORS_ORIGINS",
     )
     engine_specs: List[EngineSpec] = Field(
-        default_factory=lambda: [EngineSpec(key="stockfish", name="Stockfish", binary="stockfish")],
+        default_factory=lambda: [
+            EngineSpec(key="stockfish", name="Stockfish", binary="stockfish", default_depth=16),
+            EngineSpec(key="skaks", name="Skaks", binary="skaks", default_depth=6),
+        ],
         alias="CHESS_ENGINE_SPECS",
     )
-    engine_timeout_seconds: float = Field(default=5.0, alias="CHESS_ENGINE_TIMEOUT_SECONDS", gt=0)
     engine_default_depth: int = Field(default=12, alias="CHESS_ENGINE_DEFAULT_DEPTH", ge=1, le=64)
 
     model_config = {

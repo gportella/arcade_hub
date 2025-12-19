@@ -27,7 +27,7 @@
  */
 declare module '$env/static/private' {
 	export const NVM_INC: string;
-	export const TERM_PROGRAM: string;
+	export const MANPATH: string;
 	export const NODE: string;
 	export const SSL_CERT_FILE: string;
 	export const INIT_CWD: string;
@@ -39,12 +39,8 @@ declare module '$env/static/private' {
 	export const TMPDIR: string;
 	export const npm_config_global_prefix: string;
 	export const CONDA_SHLVL: string;
-	export const VSCODE_PYTHON_AUTOACTIVATE_GUARD: string;
 	export const CONDA_PROMPT_MODIFIER: string;
-	export const TERM_PROGRAM_VERSION: string;
-	export const ZDOTDIR: string;
-	export const ORIGINAL_XDG_CURRENT_DESKTOP: string;
-	export const MallocNanoZone: string;
+	export const WINDOWID: string;
 	export const COLOR: string;
 	export const AWS_CA_BUNDLE: string;
 	export const npm_config_noproxy: string;
@@ -64,7 +60,6 @@ declare module '$env/static/private' {
 	export const GMXLIB: string;
 	export const NVM_AUTO_USE_ACTIVE: string;
 	export const SSH_AUTH_SOCK: string;
-	export const VSCODE_PROFILE_INITIALIZED: string;
 	export const __CF_USER_TEXT_ENCODING: string;
 	export const npm_execpath: string;
 	export const PAGER: string;
@@ -72,22 +67,19 @@ declare module '$env/static/private' {
 	export const LSCOLORS: string;
 	export const PATH: string;
 	export const npm_package_json: string;
-	export const _: string;
 	export const LaunchInstanceID: string;
 	export const npm_config_userconfig: string;
 	export const npm_config_init_module: string;
 	export const CONDA_PREFIX: string;
-	export const USER_ZDOTDIR: string;
 	export const __CFBundleIdentifier: string;
 	export const npm_command: string;
 	export const PWD: string;
 	export const npm_lifecycle_event: string;
 	export const EDITOR: string;
+	export const KITTY_PID: string;
 	export const npm_package_name: string;
 	export const LANG: string;
-	export const PYTHONSTARTUP: string;
 	export const npm_config_npm_version: string;
-	export const VSCODE_GIT_ASKPASS_EXTRA_ARGS: string;
 	export const XPC_FLAGS: string;
 	export const NVM_LAZY_LOAD: string;
 	export const npm_config_node_gyp: string;
@@ -95,12 +87,10 @@ declare module '$env/static/private' {
 	export const npm_package_version: string;
 	export const _CE_M: string;
 	export const XPC_SERVICE_NAME: string;
-	export const VSCODE_INJECTION: string;
 	export const SPROMPT: string;
 	export const SHLVL: string;
 	export const HOME: string;
-	export const VSCODE_GIT_ASKPASS_MAIN: string;
-	export const PYTHON_BASIC_REPL: string;
+	export const TERMINFO: string;
 	export const HOMEBREW_PREFIX: string;
 	export const no_proxy: string;
 	export const npm_config_cache: string;
@@ -108,24 +98,23 @@ declare module '$env/static/private' {
 	export const LESS: string;
 	export const LOGNAME: string;
 	export const npm_lifecycle_script: string;
-	export const VSCODE_GIT_IPC_HANDLE: string;
 	export const NVM_COMPLETION: string;
 	export const NVM_BIN: string;
 	export const CONDA_DEFAULT_ENV: string;
 	export const npm_config_user_agent: string;
+	export const KITTY_INSTALLATION_DIR: string;
+	export const KITTY_WINDOW_ID: string;
 	export const INFOPATH: string;
 	export const HOMEBREW_CELLAR: string;
-	export const VSCODE_GIT_ASKPASS_NODE: string;
-	export const GIT_ASKPASS: string;
 	export const BAT_THEME: string;
-	export const GIT_PAGER: string;
 	export const SECURITYSESSIONID: string;
 	export const NODE_EXTRA_CA_CERTS: string;
 	export const npm_node_execpath: string;
 	export const npm_config_prefix: string;
 	export const COLORTERM: string;
+	export const KITTY_PUBLIC_KEY: string;
+	export const _: string;
 	export const NODE_ENV: string;
-	export const LAST_MESSAGE_TIME: string;
 }
 
 /**
@@ -158,7 +147,7 @@ declare module '$env/static/public' {
 declare module '$env/dynamic/private' {
 	export const env: {
 		NVM_INC: string;
-		TERM_PROGRAM: string;
+		MANPATH: string;
 		NODE: string;
 		SSL_CERT_FILE: string;
 		INIT_CWD: string;
@@ -170,12 +159,8 @@ declare module '$env/dynamic/private' {
 		TMPDIR: string;
 		npm_config_global_prefix: string;
 		CONDA_SHLVL: string;
-		VSCODE_PYTHON_AUTOACTIVATE_GUARD: string;
 		CONDA_PROMPT_MODIFIER: string;
-		TERM_PROGRAM_VERSION: string;
-		ZDOTDIR: string;
-		ORIGINAL_XDG_CURRENT_DESKTOP: string;
-		MallocNanoZone: string;
+		WINDOWID: string;
 		COLOR: string;
 		AWS_CA_BUNDLE: string;
 		npm_config_noproxy: string;
@@ -195,7 +180,6 @@ declare module '$env/dynamic/private' {
 		GMXLIB: string;
 		NVM_AUTO_USE_ACTIVE: string;
 		SSH_AUTH_SOCK: string;
-		VSCODE_PROFILE_INITIALIZED: string;
 		__CF_USER_TEXT_ENCODING: string;
 		npm_execpath: string;
 		PAGER: string;
@@ -203,22 +187,19 @@ declare module '$env/dynamic/private' {
 		LSCOLORS: string;
 		PATH: string;
 		npm_package_json: string;
-		_: string;
 		LaunchInstanceID: string;
 		npm_config_userconfig: string;
 		npm_config_init_module: string;
 		CONDA_PREFIX: string;
-		USER_ZDOTDIR: string;
 		__CFBundleIdentifier: string;
 		npm_command: string;
 		PWD: string;
 		npm_lifecycle_event: string;
 		EDITOR: string;
+		KITTY_PID: string;
 		npm_package_name: string;
 		LANG: string;
-		PYTHONSTARTUP: string;
 		npm_config_npm_version: string;
-		VSCODE_GIT_ASKPASS_EXTRA_ARGS: string;
 		XPC_FLAGS: string;
 		NVM_LAZY_LOAD: string;
 		npm_config_node_gyp: string;
@@ -226,12 +207,10 @@ declare module '$env/dynamic/private' {
 		npm_package_version: string;
 		_CE_M: string;
 		XPC_SERVICE_NAME: string;
-		VSCODE_INJECTION: string;
 		SPROMPT: string;
 		SHLVL: string;
 		HOME: string;
-		VSCODE_GIT_ASKPASS_MAIN: string;
-		PYTHON_BASIC_REPL: string;
+		TERMINFO: string;
 		HOMEBREW_PREFIX: string;
 		no_proxy: string;
 		npm_config_cache: string;
@@ -239,24 +218,23 @@ declare module '$env/dynamic/private' {
 		LESS: string;
 		LOGNAME: string;
 		npm_lifecycle_script: string;
-		VSCODE_GIT_IPC_HANDLE: string;
 		NVM_COMPLETION: string;
 		NVM_BIN: string;
 		CONDA_DEFAULT_ENV: string;
 		npm_config_user_agent: string;
+		KITTY_INSTALLATION_DIR: string;
+		KITTY_WINDOW_ID: string;
 		INFOPATH: string;
 		HOMEBREW_CELLAR: string;
-		VSCODE_GIT_ASKPASS_NODE: string;
-		GIT_ASKPASS: string;
 		BAT_THEME: string;
-		GIT_PAGER: string;
 		SECURITYSESSIONID: string;
 		NODE_EXTRA_CA_CERTS: string;
 		npm_node_execpath: string;
 		npm_config_prefix: string;
 		COLORTERM: string;
+		KITTY_PUBLIC_KEY: string;
+		_: string;
 		NODE_ENV: string;
-		LAST_MESSAGE_TIME: string;
 		[key: `PUBLIC_${string}`]: undefined;
 		[key: `${string}`]: string | undefined;
 	}

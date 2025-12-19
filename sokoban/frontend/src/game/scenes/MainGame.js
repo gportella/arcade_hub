@@ -3,9 +3,15 @@ import { Scene } from "phaser";
 import { EventBus } from "../EventBus";
 import { WorldBuilder } from "../world/WorldBuilder.js";
 import { PushableBox } from "../entities/PushableBox.js";
+import { TargetManager } from "../entities/TargetManager.js";
 
 export class MainGame extends Scene {
     constructor() { super("MainGame"); }
+
+    preload() {
+        const playerAsset = new URL("../assets/face_sprite.png", import.meta.url).href;
+        this.load.image("emmaSprite", playerAsset);
+    }
 
     create() {
         const size = 64, ox = 0, oy = 0;
@@ -13,6 +19,8 @@ export class MainGame extends Scene {
         this.moveTarget = null;
         this.cancelCommitThreshold = 0.15; // commit move even when key tap is brief
         this.pointerCode = "__pointer__";
+        this.playerTextureKey = "emmaSprite";
+        this.hasWon = false;
 
         this.grid = {
             size,
@@ -24,13 +32,14 @@ export class MainGame extends Scene {
 
         drawGrid(this, size, ox, oy, this.scale.width, this.scale.height);
 
-        const g = this.add.graphics();
-        g.fillStyle(0x4caf50, 1).fillRect(0, 0, size, size);
-        g.lineStyle(2, 0x1b5e20, 1).strokeRect(0, 0, size, size);
-        g.generateTexture("boxTexture", size, size);
-        g.destroy();
+        // const g = this.add.graphics();
+        // g.fillStyle(0x4caf50, 1).fillRect(0, 0, size, size);
+        // g.lineStyle(2, 0x1b5e20, 1).strokeRect(0, 0, size, size);
+        // g.generateTexture("boxTexture", size, size);
+        // g.destroy();
 
-        this.box = this.add.image(0, 0, "boxTexture").setOrigin(0).setInteractive({ useHandCursor: true });
+        this.box = this.add.image(0, 0, this.playerTextureKey).setOrigin(0).setInteractive({ useHandCursor: true });
+        this.box.setDisplaySize(size, size); // match grid cell size
         this.physics.add.existing(this.box);
         const boxBody = this.getBoxBody();
         boxBody.setCollideWorldBounds(true);
@@ -42,7 +51,9 @@ export class MainGame extends Scene {
             contour: true,
             obstacles: [
                 { col: 3, row: 2 },
-                { row: 4, colStart: 2, colEnd: 7 }
+                { row: 4, colStart: 2, colEnd: 7 },
+                { row: 6, colStart: 2, colEnd: 6 },
+                { col: 10, rowStart: 2, rowEnd: 7 }
             ],
             color: 0x888888
         });
@@ -54,8 +65,15 @@ export class MainGame extends Scene {
 
         world.getObstacleObjects().forEach(obj => this.physics.add.collider(this.box, obj));
 
+        const targetCells = [
+            { col: 7, row: 6 },
+            { col: 9, row: 6 }
+        ];
+        this.targets = new TargetManager(this, this.grid, targetCells);
+
         const pushable = new PushableBox(this, this.grid, "pushBoxTexture", size, { col: 4, row: 3 });
-        this.pushables = [pushable];
+        const secPushable = new PushableBox(this, this.grid, "pushBoxTexture", size, { col: 8, row: 8 });
+        this.pushables = [pushable, secPushable];
 
         this.boxCell = { col: 1, row: 1 };
         this.syncBoxPosition();
@@ -100,6 +118,7 @@ export class MainGame extends Scene {
         }, this);
 
         EventBus.emit("current-scene-ready", this);
+        this.checkWinCondition();
     }
 
     update() {
@@ -402,6 +421,7 @@ export class MainGame extends Scene {
         box.cancelMove(to.col, to.row);
         this.activePush = null;
         this.awaitingPushables = false;
+        this.checkWinCondition();
     }
 
     cancelActivePush() {
@@ -410,6 +430,7 @@ export class MainGame extends Scene {
         box.cancelMove(from.col, from.row);
         this.activePush = null;
         this.awaitingPushables = false;
+        this.checkWinCondition();
     }
 
     onPushableMoveFinished() {
@@ -417,6 +438,18 @@ export class MainGame extends Scene {
         if (!this.pushables.every(p => !p.isMoving())) return;
         this.awaitingPushables = false;
         this.scheduleNextMove();
+        this.checkWinCondition();
+    }
+
+    checkWinCondition() {
+        if (!this.targets) return;
+        const solved = this.targets.areAllOccupied(this.pushables);
+        if (solved && !this.hasWon) {
+            this.hasWon = true;
+            console.log("Puzzle solved!");
+        } else if (!solved) {
+            this.hasWon = false;
+        }
     }
 
     isInsideGrid(col, row) {

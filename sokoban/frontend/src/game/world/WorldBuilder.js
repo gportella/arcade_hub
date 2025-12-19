@@ -24,10 +24,19 @@ export class WorldBuilder {
             for (let r = 0; r < this.grid.rows; r++) { addCell(0, r); addCell(this.grid.cols - 1, r); }
         }
 
-        // Obstacles: single cells or horizontal ranges
+        // Obstacles: single cells, horizontal ranges, vertical ranges, or rectangles
         (config.obstacles || []).forEach(o => {
-            if (o.colStart != null && o.colEnd != null && o.row != null) {
+            const hasColRange = o.colStart != null && o.colEnd != null;
+            const hasRowRange = o.rowStart != null && o.rowEnd != null;
+
+            if (hasColRange && hasRowRange) {
+                for (let c = o.colStart; c <= o.colEnd; c++) {
+                    for (let r = o.rowStart; r <= o.rowEnd; r++) addCell(c, r);
+                }
+            } else if (hasColRange && o.row != null) {
                 for (let c = o.colStart; c <= o.colEnd; c++) addCell(c, o.row);
+            } else if (hasRowRange && o.col != null) {
+                for (let r = o.rowStart; r <= o.rowEnd; r++) addCell(o.col, r);
             } else if (o.col != null && o.row != null) {
                 addCell(o.col, o.row);
             }

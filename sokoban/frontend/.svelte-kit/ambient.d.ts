@@ -102,8 +102,8 @@ declare module '$env/static/private' {
 	export const NVM_BIN: string;
 	export const CONDA_DEFAULT_ENV: string;
 	export const npm_config_user_agent: string;
-	export const KITTY_INSTALLATION_DIR: string;
 	export const KITTY_WINDOW_ID: string;
+	export const KITTY_INSTALLATION_DIR: string;
 	export const INFOPATH: string;
 	export const HOMEBREW_CELLAR: string;
 	export const BAT_THEME: string;
@@ -111,8 +111,8 @@ declare module '$env/static/private' {
 	export const NODE_EXTRA_CA_CERTS: string;
 	export const npm_node_execpath: string;
 	export const npm_config_prefix: string;
-	export const COLORTERM: string;
 	export const KITTY_PUBLIC_KEY: string;
+	export const COLORTERM: string;
 	export const _: string;
 	export const NODE_ENV: string;
 }
@@ -222,8 +222,8 @@ declare module '$env/dynamic/private' {
 		NVM_BIN: string;
 		CONDA_DEFAULT_ENV: string;
 		npm_config_user_agent: string;
-		KITTY_INSTALLATION_DIR: string;
 		KITTY_WINDOW_ID: string;
+		KITTY_INSTALLATION_DIR: string;
 		INFOPATH: string;
 		HOMEBREW_CELLAR: string;
 		BAT_THEME: string;
@@ -231,8 +231,8 @@ declare module '$env/dynamic/private' {
 		NODE_EXTRA_CA_CERTS: string;
 		npm_node_execpath: string;
 		npm_config_prefix: string;
-		COLORTERM: string;
 		KITTY_PUBLIC_KEY: string;
+		COLORTERM: string;
 		_: string;
 		NODE_ENV: string;
 		[key: `PUBLIC_${string}`]: undefined;

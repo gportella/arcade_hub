@@ -70,6 +70,10 @@ export class MainGame extends Scene {
             { col: 9, row: 6 }
         ];
         this.targets = new TargetManager(this, this.grid, targetCells);
+        this.winText = this.add.text(this.scale.width / 2, 24, "Well done!", { fontFamily: "Arial", fontSize: "32px", color: "#ffffff" })
+            .setOrigin(0.5, 0)
+            .setDepth(100)
+            .setVisible(false);
 
         const pushable = new PushableBox(this, this.grid, "pushBoxTexture", size, { col: 4, row: 3 });
         const secPushable = new PushableBox(this, this.grid, "pushBoxTexture", size, { col: 8, row: 8 });
@@ -446,9 +450,11 @@ export class MainGame extends Scene {
         const solved = this.targets.areAllOccupied(this.pushables);
         if (solved && !this.hasWon) {
             this.hasWon = true;
-            console.log("Puzzle solved!");
+            if (this.winText) this.winText.setVisible(true);
+            console.log("Well done!");
         } else if (!solved) {
             this.hasWon = false;
+            if (this.winText) this.winText.setVisible(false);
         }
     }
 

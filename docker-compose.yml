@@ -112,10 +112,11 @@ services:
     restart: unless-stopped
     environment:
       - CHESS_DATABASE_URL=sqlite:////app/backend/data/chess.db
-      - PATH=/host-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - PATH=/host-bin:/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
       - /home/guillem/container_services/arcade_hub/chess_pit/data:/app/backend/data
       - /home/guillem/.local/bin:/host-bin:ro
+      - /home/guillem/.local/share/skaks/book:/app/backend/book:ro
     networks:
       - chesspit
     labels:

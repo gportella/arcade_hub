@@ -4,9 +4,56 @@ import { EventBus } from "../EventBus";
 import { WorldBuilder } from "../world/WorldBuilder.js";
 import { PushableBox } from "../entities/PushableBox.js";
 import { TargetManager } from "../entities/TargetManager.js";
+import { getDefaultLevelId, getLevelById, getLevelProgress, getNextLevelId, getPreviousLevelId } from "../levels/index.js";
+
+/**
+ * @typedef {Object} LevelGridConfig
+ * @property {number} [size]
+ * @property {number} [ox]
+ * @property {number} [oy]
+ * @property {number} [cols]
+ * @property {number} [rows]
+ *
+ * @typedef {Object} LevelConfig
+ * @property {string} id
+ * @property {string} name
+ * @property {LevelGridConfig} [grid]
+ * @property {{ col: number, row: number }} [player]
+ * @property {Array<{ col: number, row: number }>} [pushables]
+ * @property {Array<{ col: number, row: number }>} [targets]
+ * @property {boolean} [contour]
+ * @property {Array<Record<string, unknown>>} [obstacles]
+ * @property {Array<string>} [wallMask]
+ * @property {number} [wallColor]
+ */
+
+const STORAGE_KEY = "sokoban.currentLevel";
+
+function readStoredLevelId() {
+    if (typeof window === "undefined") return null;
+    try {
+        return window.localStorage.getItem(STORAGE_KEY);
+    } catch (error) {
+        console.warn("Unable to read level from storage", error);
+        return null;
+    }
+}
+
+function writeStoredLevelId(id) {
+    if (typeof window === "undefined") return;
+    try {
+        window.localStorage.setItem(STORAGE_KEY, id);
+    } catch (error) {
+        console.warn("Unable to persist level to storage", error);
+    }
+}
 
 export class MainGame extends Scene {
     constructor() { super("MainGame"); }
+
+    init(data) {
+        this.requestedLevelId = data && typeof data.levelId === "string" ? data.levelId : null;
+    }
 
     preload() {
         const playerAsset = new URL("../assets/face_sprite.png", import.meta.url).href;
@@ -14,23 +61,55 @@ export class MainGame extends Scene {
     }
 
     create() {
-        const size = 64, ox = 0, oy = 0;
+        const storedId = readStoredLevelId();
+        const initialId = this.requestedLevelId || storedId || getDefaultLevelId();
+        this.requestedLevelId = null;
+
+        /** @type {LevelConfig} */
+        const level = getLevelById(initialId);
+        this.levelConfig = level;
+        this.levelId = level.id;
+        this.levelName = level.name;
+        this.hasWon = false;
+        this.nextLevelId = getNextLevelId(this.levelId);
+        this.prevLevelId = getPreviousLevelId(this.levelId);
+        writeStoredLevelId(this.levelId);
+
+        const levelGrid = /** @type {LevelGridConfig} */ (level.grid || {});
+
+        let size = levelGrid.size || 64;
+        const parsedCols = levelGrid.cols || (level.wallMask ? level.wallMask[0]?.length : null);
+        const parsedRows = levelGrid.rows || (level.wallMask ? level.wallMask.length : null);
+        const fallbackCols = parsedCols || Math.max(1, Math.floor(this.scale.width / size));
+        const fallbackRows = parsedRows || Math.max(1, Math.floor(this.scale.height / size));
+        const derivedCols = fallbackCols;
+        const derivedRows = fallbackRows;
+        const maxWidthSize = Math.max(1, Math.floor(this.scale.width / derivedCols));
+        const maxHeightSize = Math.max(1, Math.floor(this.scale.height / derivedRows));
+        size = Math.min(size, maxWidthSize, maxHeightSize);
+        if (size < 8) size = 8;
+
+        const gridWidthPx = derivedCols * size;
+        const gridHeightPx = derivedRows * size;
+        const ox = levelGrid.ox !== undefined ? levelGrid.ox : Math.max(0, Math.floor((this.scale.width - gridWidthPx) / 2));
+        const oy = levelGrid.oy !== undefined ? levelGrid.oy : Math.max(0, Math.floor((this.scale.height - gridHeightPx) / 2));
         this.moveSpeed = 220;
         this.moveTarget = null;
         this.cancelCommitThreshold = 0.15; // commit move even when key tap is brief
         this.pointerCode = "__pointer__";
         this.playerTextureKey = "emmaSprite";
-        this.hasWon = false;
 
         this.grid = {
             size,
             ox,
             oy,
-            cols: Math.floor((this.scale.width - ox) / size),
-            rows: Math.floor((this.scale.height - oy) / size)
+            cols: derivedCols,
+            rows: derivedRows
         };
 
-        drawGrid(this, size, ox, oy, this.scale.width, this.scale.height);
+        const gridRight = this.grid.ox + this.grid.cols * this.grid.size;
+        const gridBottom = this.grid.oy + this.grid.rows * this.grid.size;
+        drawGrid(this, this.grid.size, this.grid.ox, this.grid.oy, gridRight, gridBottom);
 
         // const g = this.add.graphics();
         // g.fillStyle(0x4caf50, 1).fillRect(0, 0, size, size);
@@ -39,24 +118,21 @@ export class MainGame extends Scene {
         // g.destroy();
 
         this.box = this.add.image(0, 0, this.playerTextureKey).setOrigin(0).setInteractive({ useHandCursor: true });
-        this.box.setDisplaySize(size, size); // match grid cell size
+        this.box.setDisplaySize(this.grid.size, this.grid.size); // match grid cell size
         this.physics.add.existing(this.box);
         const boxBody = this.getBoxBody();
         boxBody.setCollideWorldBounds(true);
-        boxBody.setSize(size, size, false);
+        boxBody.setSize(this.grid.size, this.grid.size, false);
         boxBody.setBounce(0);
         boxBody.setImmovable(false);
 
-        const world = new WorldBuilder(this, this.grid).build({
-            contour: true,
-            obstacles: [
-                { col: 3, row: 2 },
-                { row: 4, colStart: 2, colEnd: 7 },
-                { row: 6, colStart: 2, colEnd: 6 },
-                { col: 10, rowStart: 2, rowEnd: 7 }
-            ],
-            color: 0x888888
-        });
+        const worldConfig = {
+            contour: level.contour !== undefined ? level.contour : true,
+            obstacles: level.obstacles || [],
+            wallMask: level.wallMask || [],
+            color: level.wallColor || 0x888888
+        };
+        const world = new WorldBuilder(this, this.grid).build(worldConfig);
         this.world = world;
 
         if (this.input && this.input.manager && this.input.manager.canvas) {
@@ -65,21 +141,21 @@ export class MainGame extends Scene {
 
         world.getObstacleObjects().forEach(obj => this.physics.add.collider(this.box, obj));
 
-        const targetCells = [
-            { col: 7, row: 6 },
-            { col: 9, row: 6 }
-        ];
+        const targetCells = level.targets || [];
         this.targets = new TargetManager(this, this.grid, targetCells);
         this.winText = this.add.text(this.scale.width / 2, 24, "Well done!", { fontFamily: "Arial", fontSize: "32px", color: "#ffffff" })
             .setOrigin(0.5, 0)
             .setDepth(100)
             .setVisible(false);
 
-        const pushable = new PushableBox(this, this.grid, "pushBoxTexture", size, { col: 4, row: 3 });
-        const secPushable = new PushableBox(this, this.grid, "pushBoxTexture", size, { col: 8, row: 8 });
-        this.pushables = [pushable, secPushable];
+        const pushableCells = level.pushables || [];
+        this.pushables = pushableCells.map((cell, index) => {
+            const textureKey = `pushBoxTexture${index}`;
+            return new PushableBox(this, this.grid, textureKey, this.grid.size, cell);
+        });
 
-        this.boxCell = { col: 1, row: 1 };
+        const playerCell = level.player || { col: 1, row: 1 };
+        this.boxCell = { col: playerCell.col, row: playerCell.row };
         this.syncBoxPosition();
 
         this.moveStart = null;
@@ -101,6 +177,38 @@ export class MainGame extends Scene {
         this.input.on("pointerup", (pointer) => this.onPointerUp(pointer), this);
         this.input.on("pointerupoutside", (pointer) => this.onPointerUp(pointer), this);
 
+        const progress = getLevelProgress(this.levelId);
+        EventBus.emit("level-changed", {
+            id: this.levelId,
+            name: this.levelName,
+            index: progress.index,
+            total: progress.total,
+            hasNext: !!this.nextLevelId,
+            hasPrev: !!this.prevLevelId,
+            nextId: this.nextLevelId,
+            prevId: this.prevLevelId
+        });
+        EventBus.emit("current-scene-ready", this);
+
+        this.eventHandlers = {
+            restart: () => this.scene.restart({ levelId: this.levelId }),
+            loadLevel: (requestedId) => {
+                if (typeof requestedId === "string" && requestedId.length > 0) {
+                    this.scene.restart({ levelId: requestedId });
+                }
+            }
+        };
+
+        EventBus.on("request-restart", this.eventHandlers.restart);
+        EventBus.on("request-load-level", this.eventHandlers.loadLevel);
+
+        this.events.once("shutdown", () => {
+            if (this.eventHandlers) {
+                EventBus.off("request-restart", this.eventHandlers.restart);
+                EventBus.off("request-load-level", this.eventHandlers.loadLevel);
+            }
+        });
+
         const keyDirections = {
             ArrowLeft: { dx: -1, dy: 0 }, ArrowRight: { dx: 1, dy: 0 },
             ArrowUp: { dx: 0, dy: -1 }, ArrowDown: { dx: 0, dy: 1 },
@@ -121,7 +229,6 @@ export class MainGame extends Scene {
             this.handleKeyUp(event.code);
         }, this);
 
-        EventBus.emit("current-scene-ready", this);
         this.checkWinCondition();
     }
 
@@ -196,7 +303,7 @@ export class MainGame extends Scene {
 
     preventPointerDefault(pointer) {
         const ev = pointer.event;
-        if (ev && typeof ev.preventDefault === "function") ev.preventDefault();
+        if (ev && typeof ev.preventDefault === "function" && ev.cancelable) ev.preventDefault();
         if (ev && typeof ev.stopPropagation === "function") ev.stopPropagation();
     }
 
@@ -452,6 +559,14 @@ export class MainGame extends Scene {
             this.hasWon = true;
             if (this.winText) this.winText.setVisible(true);
             console.log("Well done!");
+            const nextId = getNextLevelId(this.levelId);
+            EventBus.emit("level-complete", { id: this.levelId, name: this.levelName, nextId });
+
+            if (nextId) {
+                this.time.delayedCall(900, () => {
+                    this.scene.restart({ levelId: nextId });
+                });
+            }
         } else if (!solved) {
             this.hasWon = false;
             if (this.winText) this.winText.setVisible(false);

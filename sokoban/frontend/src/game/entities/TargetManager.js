@@ -23,6 +23,7 @@ export class TargetManager {
         const pos = this.toXY(col, row);
         const sprite = this.scene.add.image(pos.x, pos.y, this.textureKey).setOrigin(0);
         sprite.setDisplaySize(this.grid.size, this.grid.size);
+        sprite.setDepth(-1); // ensure targets render beneath the player and boxes
         this.targets.push({ sprite, col, row });
         this.targetSet.add(this.key(col, row));
         return sprite;

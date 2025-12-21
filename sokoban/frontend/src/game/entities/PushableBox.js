@@ -8,6 +8,10 @@ export class PushableBox {
         this.tween = null;
 
         // Simple texture for the pushable box
+        if (scene.textures.exists(textureKey)) {
+            scene.textures.remove(textureKey);
+        }
+
         const g = scene.add.graphics();
         g.fillStyle(0xffc107, 1).fillRect(0, 0, size, size);
         g.lineStyle(2, 0xff6f00, 1).strokeRect(0, 0, size, size);

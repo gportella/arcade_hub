@@ -11,11 +11,13 @@ export class WorldBuilder {
         const color = config.color || 0x888888;
 
         const addCell = (col, row, c) => {
+            const key = `${col},${row}`;
+            if (this.blocked.has(key)) return;
             const pos = this.toXY(col, row);
             const rect = this.scene.add.rectangle(pos.x, pos.y, this.grid.size, this.grid.size, c || color).setOrigin(0);
             this.scene.physics.add.existing(rect, true); // static
             this.obstacles.push(rect);
-            this.blocked.add(`${col},${row}`);
+            this.blocked.add(key);
         };
 
         // Contour (outer ring)
@@ -41,6 +43,18 @@ export class WorldBuilder {
                 addCell(o.col, o.row);
             }
         });
+
+        if (Array.isArray(config.wallMask)) {
+            config.wallMask.forEach((maskRow, row) => {
+                if (typeof maskRow !== "string") return;
+                for (let col = 0; col < maskRow.length; col++) {
+                    const symbol = maskRow[col];
+                    if (symbol === "1" || symbol === "#") {
+                        addCell(col, row);
+                    }
+                }
+            });
+        }
 
         return this;
     }

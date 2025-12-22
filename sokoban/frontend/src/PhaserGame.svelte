@@ -59,11 +59,6 @@
                 scaleManager.setGameSize(width, height);
                 scaleManager.refresh();
             }
-            const currentScene = /** @type {import("./game/scenes/MainGame").MainGame | null} */ (phaserRef.scene);
-            if (currentScene) {
-                const levelId = currentScene.levelId;
-                currentScene.scene.restart(levelId ? { levelId } : undefined);
-            }
         };
 
         resizeHandler = () => {

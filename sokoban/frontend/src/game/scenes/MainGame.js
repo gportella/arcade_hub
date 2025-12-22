@@ -190,6 +190,13 @@ export class MainGame extends Scene {
         this.swipeStart = null;
         this.swipeSuppressed = false;
 
+        this.scaleResizeHandler = () => {
+            this.scene.restart({ levelId: this.levelId });
+        };
+        if (this.scale) {
+            this.scale.on("resize", this.scaleResizeHandler, this);
+        }
+
         const progress = getLevelProgress(this.levelId);
         EventBus.emit("level-changed", {
             id: this.levelId,
@@ -231,6 +238,9 @@ export class MainGame extends Scene {
                 }
                 this.input.off("pointerdown", this.onGlobalPointerDown, this);
                 this.input.off("pointerup", this.onGlobalPointerUp, this);
+            }
+            if (this.scale && this.scaleResizeHandler) {
+                this.scale.off("resize", this.scaleResizeHandler, this);
             }
             this.pointerHandlers = null;
             this.swipeStart = null;

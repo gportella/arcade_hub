@@ -181,6 +181,6 @@ services:
       - traefik.http.routers.sokoban.rule=PathPrefix(`/sokoban`)
       - traefik.http.routers.sokoban.priority=100
       - traefik.http.routers.sokoban.entrypoints=web
-      - traefik.http.routers.sokoban.middlewares=sokoban-strip
       - traefik.http.services.sokoban.loadbalancer.server.port=80
-      - traefik.http.middlewares.sokoban-strip.stripprefix.prefixes=/sokoban
+      - traefik.http.routers.sokoban.service=sokoban
+      - traefik.http.services.sokoban.loadbalancer.passHostHeader=true

@@ -176,20 +176,17 @@ export class MainGame extends Scene {
         this.pointerHandlers = {
             boxDown: (pointer) => this.onPointerDown(pointer),
             move: (pointer) => this.onPointerMove(pointer),
-            up: (pointer) => {
-                this.onPointerUp(pointer);
-                this.handleSwipe(pointer);
-            },
-            upOutside: (pointer) => {
-                this.onPointerUp(pointer);
-                this.handleSwipe(pointer);
-            }
+            up: (pointer) => this.onPointerUp(pointer),
+            upOutside: (pointer) => this.onPointerUp(pointer)
         };
 
         this.box.on("pointerdown", this.pointerHandlers.boxDown);
         this.input.on("pointermove", this.pointerHandlers.move);
         this.input.on("pointerup", this.pointerHandlers.up);
         this.input.on("pointerupoutside", this.pointerHandlers.upOutside);
+        this.input.on("pointerdown", this.onGlobalPointerDown, this);
+        this.input.on("pointerup", this.onGlobalPointerUp, this);
+        this.input.on("pointerupoutside", this.onGlobalPointerUp, this);
 
         this.scaleResizeHandler = () => {
             this.scene.restart({ levelId: this.levelId });
@@ -197,6 +194,8 @@ export class MainGame extends Scene {
         if (this.scale) {
             this.scale.on("resize", this.scaleResizeHandler, this);
         }
+
+        this.swipeState = null;
 
         const progress = getLevelProgress(this.levelId);
         EventBus.emit("level-changed", {
@@ -237,11 +236,15 @@ export class MainGame extends Scene {
                     this.input.off("pointerup", this.pointerHandlers.up);
                     this.input.off("pointerupoutside", this.pointerHandlers.upOutside);
                 }
+                this.input.off("pointerdown", this.onGlobalPointerDown, this);
+                this.input.off("pointerup", this.onGlobalPointerUp, this);
+                this.input.off("pointerupoutside", this.onGlobalPointerUp, this);
             }
             if (this.scale && this.scaleResizeHandler) {
                 this.scale.off("resize", this.scaleResizeHandler, this);
             }
             this.pointerHandlers = null;
+            this.swipeState = null;
         });
 
         const keyDirections = {
@@ -302,6 +305,9 @@ export class MainGame extends Scene {
         this.preventPointerDefault(active);
         this.pointerActive = true;
         this.activePointerId = active ? active.id : null;
+        if (this.swipeState && this.swipeState.id === this.activePointerId) {
+            this.swipeState.allowSwipe = false;
+        }
         if (active) this.commandPointer(active);
     }
 
@@ -329,6 +335,27 @@ export class MainGame extends Scene {
         if (this.moveTarget && this.currentDirectionCode === this.pointerCode) {
             this.cancelRequested = true;
         }
+    }
+
+    onGlobalPointerDown(pointer) {
+        this.swipeState = {
+            id: pointer.id,
+            x: pointer.worldX,
+            y: pointer.worldY,
+            allowSwipe: true
+        };
+    }
+
+    onGlobalPointerUp(pointer) {
+        if (!this.swipeState || this.swipeState.id !== pointer.id) {
+            return;
+        }
+        const state = this.swipeState;
+        this.swipeState = null;
+        if (!state.allowSwipe) {
+            return;
+        }
+        this.handleSwipe(state, pointer);
     }
 
     commandPointer(pointer) {
@@ -629,15 +656,13 @@ export class MainGame extends Scene {
         return { col: Math.min(Math.max(col, 0), maxCol), row: Math.min(Math.max(row, 0), maxRow) };
     }
 
-    handleSwipe(pointer) {
-        if (!pointer) return;
-        const downX = pointer.downX ?? pointer.worldX;
-        const downY = pointer.downY ?? pointer.worldY;
-        const upX = pointer.upX ?? pointer.worldX;
-        const upY = pointer.upY ?? pointer.worldY;
+    handleSwipe(state, pointer) {
+        if (!state) return;
+        const upX = pointer ? pointer.worldX : state.x;
+        const upY = pointer ? pointer.worldY : state.y;
 
-        const dx = (upX || 0) - (downX || 0);
-        const dy = (upY || 0) - (downY || 0);
+        const dx = upX - state.x;
+        const dy = upY - state.y;
         const absDx = Math.abs(dx);
         const absDy = Math.abs(dy);
         const minDistance = Math.max(18, this.grid.size * 0.25);

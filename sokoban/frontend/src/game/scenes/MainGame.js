@@ -188,6 +188,19 @@ export class MainGame extends Scene {
         this.input.on("pointerup", this.onGlobalPointerUp, this);
         this.input.on("pointerupoutside", this.onGlobalPointerUp, this);
 
+        this.input.topOnly = false;
+        if (this.input.setPollAlways) {
+            this.input.setPollAlways();
+        }
+        const manager = this.input.manager;
+        if (manager && Array.isArray(manager.pointers)) {
+            manager.pointers.forEach(pointer => {
+                if (pointer && typeof pointer.reset === "function") {
+                    pointer.reset();
+                }
+            });
+        }
+
         this.scaleResizeHandler = () => {
             this.scene.restart({ levelId: this.levelId });
         };

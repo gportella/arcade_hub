@@ -10,6 +10,7 @@ const basePath = (() => {
 	const withoutSlashes = trimmed.replace(/^\/+|\/+$/g, '');
 	return `/${withoutSlashes}`;
 })();
+const assetsPath = basePath ? `.${basePath}` : '';
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -23,7 +24,7 @@ const config = {
 		}),
 		paths: {
 			base: basePath,
-			assets: basePath || '',
+			assets: assetsPath,
 		},
 	}
 };

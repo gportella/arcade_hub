@@ -182,5 +182,3 @@ services:
       - traefik.http.routers.sokoban.priority=100
       - traefik.http.routers.sokoban.entrypoints=web
       - traefik.http.services.sokoban.loadbalancer.server.port=80
-      - traefik.http.routers.sokoban.service=sokoban
-      - traefik.http.services.sokoban.loadbalancer.passHostHeader=true

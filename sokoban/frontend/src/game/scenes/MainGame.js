@@ -172,10 +172,18 @@ export class MainGame extends Scene {
 
         this.pointerActive = false;
         this.activePointerId = null;
-        this.box.on("pointerdown", (pointer) => this.onPointerDown(pointer));
-        this.input.on("pointermove", (pointer) => this.onPointerMove(pointer), this);
-        this.input.on("pointerup", (pointer) => this.onPointerUp(pointer), this);
-        this.input.on("pointerupoutside", (pointer) => this.onPointerUp(pointer), this);
+
+        this.pointerHandlers = {
+            boxDown: (pointer) => this.onPointerDown(pointer),
+            move: (pointer) => this.onPointerMove(pointer),
+            up: (pointer) => this.onPointerUp(pointer),
+            upOutside: (pointer) => this.onPointerUp(pointer)
+        };
+
+        this.box.on("pointerdown", this.pointerHandlers.boxDown);
+        this.input.on("pointermove", this.pointerHandlers.move);
+        this.input.on("pointerup", this.pointerHandlers.up);
+        this.input.on("pointerupoutside", this.pointerHandlers.upOutside);
         this.input.on("pointerdown", this.onGlobalPointerDown, this);
         this.input.on("pointerup", this.onGlobalPointerUp, this);
 
@@ -212,10 +220,21 @@ export class MainGame extends Scene {
                 EventBus.off("request-restart", this.eventHandlers.restart);
                 EventBus.off("request-load-level", this.eventHandlers.loadLevel);
             }
+            if (this.box && this.pointerHandlers?.boxDown) {
+                this.box.off("pointerdown", this.pointerHandlers.boxDown);
+            }
             if (this.input) {
+                if (this.pointerHandlers) {
+                    this.input.off("pointermove", this.pointerHandlers.move);
+                    this.input.off("pointerup", this.pointerHandlers.up);
+                    this.input.off("pointerupoutside", this.pointerHandlers.upOutside);
+                }
                 this.input.off("pointerdown", this.onGlobalPointerDown, this);
                 this.input.off("pointerup", this.onGlobalPointerUp, this);
             }
+            this.pointerHandlers = null;
+            this.swipeStart = null;
+            this.swipeSuppressed = false;
         });
 
         const keyDirections = {

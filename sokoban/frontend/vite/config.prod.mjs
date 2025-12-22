@@ -1,6 +1,14 @@
 import { defineConfig } from 'vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 
+const normalizeBaseForVite = (value) => {
+    if (!value || value === '/') {
+        return '/';
+    }
+    const base = value.replace(/^\/+|\/+$/g, '');
+    return `/${base}/`;
+};
+
 const MESSAGE_INTERVAL_MS = 1000000;
 const lastMessageTime = process.env.LAST_MESSAGE_TIME || 0;
 
@@ -15,7 +23,7 @@ if (now - lastMessageTime > MESSAGE_INTERVAL_MS) {
 }
 
 export default defineConfig({
-    base: './',
+    base: normalizeBaseForVite(process.env.VITE_BASE_PATH),
     plugins: [
         sveltekit(),
     ],

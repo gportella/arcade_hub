@@ -176,19 +176,20 @@ export class MainGame extends Scene {
         this.pointerHandlers = {
             boxDown: (pointer) => this.onPointerDown(pointer),
             move: (pointer) => this.onPointerMove(pointer),
-            up: (pointer) => this.onPointerUp(pointer),
-            upOutside: (pointer) => this.onPointerUp(pointer)
+            up: (pointer) => {
+                this.onPointerUp(pointer);
+                this.handleSwipe(pointer);
+            },
+            upOutside: (pointer) => {
+                this.onPointerUp(pointer);
+                this.handleSwipe(pointer);
+            }
         };
 
         this.box.on("pointerdown", this.pointerHandlers.boxDown);
         this.input.on("pointermove", this.pointerHandlers.move);
         this.input.on("pointerup", this.pointerHandlers.up);
         this.input.on("pointerupoutside", this.pointerHandlers.upOutside);
-        this.input.on("pointerdown", this.onGlobalPointerDown, this);
-        this.input.on("pointerup", this.onGlobalPointerUp, this);
-
-        this.swipeStart = null;
-        this.swipeSuppressed = false;
 
         this.scaleResizeHandler = () => {
             this.scene.restart({ levelId: this.levelId });
@@ -236,15 +237,11 @@ export class MainGame extends Scene {
                     this.input.off("pointerup", this.pointerHandlers.up);
                     this.input.off("pointerupoutside", this.pointerHandlers.upOutside);
                 }
-                this.input.off("pointerdown", this.onGlobalPointerDown, this);
-                this.input.off("pointerup", this.onGlobalPointerUp, this);
             }
             if (this.scale && this.scaleResizeHandler) {
                 this.scale.off("resize", this.scaleResizeHandler, this);
             }
             this.pointerHandlers = null;
-            this.swipeStart = null;
-            this.swipeSuppressed = false;
         });
 
         const keyDirections = {
@@ -314,9 +311,6 @@ export class MainGame extends Scene {
         if (!active || !active.isDown) return;
         if (!this.pointerActive) return;
         if (this.activePointerId !== null && active.id !== this.activePointerId) return;
-        if (this.swipeStart && this.swipeStart.id === active.id) {
-            this.swipeSuppressed = true;
-        }
         this.commandPointer(active);
     }
 
@@ -335,51 +329,6 @@ export class MainGame extends Scene {
         if (this.moveTarget && this.currentDirectionCode === this.pointerCode) {
             this.cancelRequested = true;
         }
-    }
-
-    onGlobalPointerDown(pointer) {
-        this.swipeStart = {
-            id: pointer.id,
-            x: pointer.worldX,
-            y: pointer.worldY,
-            time: this.time.now
-        };
-        this.swipeSuppressed = false;
-    }
-
-    onGlobalPointerUp(pointer) {
-        if (!this.swipeStart || this.swipeStart.id !== pointer.id) {
-            return;
-        }
-        if (this.swipeSuppressed) {
-            this.swipeStart = null;
-            return;
-        }
-
-        const dx = pointer.worldX - this.swipeStart.x;
-        const dy = pointer.worldY - this.swipeStart.y;
-        const absDx = Math.abs(dx);
-        const absDy = Math.abs(dy);
-        const minDistance = Math.max(12, this.grid.size * 0.2);
-
-        if (absDx < minDistance && absDy < minDistance) {
-            this.swipeStart = null;
-            return;
-        }
-
-        let dirX = 0;
-        let dirY = 0;
-        if (absDx > absDy) {
-            dirX = dx > 0 ? 1 : -1;
-        } else {
-            dirY = dy > 0 ? 1 : -1;
-        }
-
-        if (dirX || dirY) {
-            this.tryMove(dirX, dirY, this.pointerCode);
-        }
-
-        this.swipeStart = null;
     }
 
     commandPointer(pointer) {
@@ -678,6 +627,36 @@ export class MainGame extends Scene {
     clampCell(col, row) {
         const maxCol = this.grid.cols - 1, maxRow = this.grid.rows - 1;
         return { col: Math.min(Math.max(col, 0), maxCol), row: Math.min(Math.max(row, 0), maxRow) };
+    }
+
+    handleSwipe(pointer) {
+        if (!pointer) return;
+        const downX = pointer.downX ?? pointer.worldX;
+        const downY = pointer.downY ?? pointer.worldY;
+        const upX = pointer.upX ?? pointer.worldX;
+        const upY = pointer.upY ?? pointer.worldY;
+
+        const dx = (upX || 0) - (downX || 0);
+        const dy = (upY || 0) - (downY || 0);
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        const minDistance = Math.max(18, this.grid.size * 0.25);
+
+        if (absDx < minDistance && absDy < minDistance) {
+            return;
+        }
+
+        let dirX = 0;
+        let dirY = 0;
+        if (absDx > absDy) {
+            dirX = dx > 0 ? 1 : -1;
+        } else {
+            dirY = dy > 0 ? 1 : -1;
+        }
+
+        if (dirX || dirY) {
+            this.tryMove(dirX, dirY, this.pointerCode);
+        }
     }
 }
 

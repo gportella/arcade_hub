@@ -69,6 +69,18 @@ const SERVICE_TAGLINES = {
         "Dope Draw",
         "Wavy Wins",
     ],
+    sokoban: [
+        'Sokoban: Crate Shift',
+        'Sokoban: Warehouse Rush',
+        'Sokoban: Box Stack Ops',
+        'Push, Plan, Clear',
+        'Crate Hustle',
+        'Route Reset',
+        'Puzzle Warehouse',
+        'Box Run',
+        'Pathfinder Mode',
+        'Cargo Slide',
+    ],
 };
 
 function pickRandom(options) {
@@ -109,6 +121,14 @@ function createDefaultServices() {
                 import.meta.env.VITE_UNBLOCK_HEALTH ?? '/solve-parking/health',
             tagline: pickRandom(SERVICE_TAGLINES.unblock),
         },
+        {
+            id: 'sokoban',
+            name: 'Sokoban Shift',
+            description: 'Push crates through tight corridors to hit the goal.',
+            url: import.meta.env.VITE_SOKOBAN_URL ?? '/sokoban/',
+            healthUrl: import.meta.env.VITE_SOKOBAN_HEALTH ?? null,
+            tagline: pickRandom(SERVICE_TAGLINES.sokoban),
+        },
     ];
 }
 
@@ -137,6 +157,13 @@ function inferTaglineKey(id, name) {
         normalizedName.includes('rook')
     ) {
         return 'chess';
+    }
+    if (
+        normalizedId.includes('sokoban') ||
+        normalizedName.includes('sokoban') ||
+        normalizedName.includes('crate')
+    ) {
+        return 'sokoban';
     }
     return null;
 }

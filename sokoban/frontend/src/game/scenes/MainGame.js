@@ -176,6 +176,11 @@ export class MainGame extends Scene {
         this.input.on("pointermove", (pointer) => this.onPointerMove(pointer), this);
         this.input.on("pointerup", (pointer) => this.onPointerUp(pointer), this);
         this.input.on("pointerupoutside", (pointer) => this.onPointerUp(pointer), this);
+        this.input.on("pointerdown", this.onGlobalPointerDown, this);
+        this.input.on("pointerup", this.onGlobalPointerUp, this);
+
+        this.swipeStart = null;
+        this.swipeSuppressed = false;
 
         const progress = getLevelProgress(this.levelId);
         EventBus.emit("level-changed", {
@@ -206,6 +211,10 @@ export class MainGame extends Scene {
             if (this.eventHandlers) {
                 EventBus.off("request-restart", this.eventHandlers.restart);
                 EventBus.off("request-load-level", this.eventHandlers.loadLevel);
+            }
+            if (this.input) {
+                this.input.off("pointerdown", this.onGlobalPointerDown, this);
+                this.input.off("pointerup", this.onGlobalPointerUp, this);
             }
         });
 
@@ -276,6 +285,9 @@ export class MainGame extends Scene {
         if (!active || !active.isDown) return;
         if (!this.pointerActive) return;
         if (this.activePointerId !== null && active.id !== this.activePointerId) return;
+        if (this.swipeStart && this.swipeStart.id === active.id) {
+            this.swipeSuppressed = true;
+        }
         this.commandPointer(active);
     }
 
@@ -294,6 +306,51 @@ export class MainGame extends Scene {
         if (this.moveTarget && this.currentDirectionCode === this.pointerCode) {
             this.cancelRequested = true;
         }
+    }
+
+    onGlobalPointerDown(pointer) {
+        this.swipeStart = {
+            id: pointer.id,
+            x: pointer.worldX,
+            y: pointer.worldY,
+            time: this.time.now
+        };
+        this.swipeSuppressed = false;
+    }
+
+    onGlobalPointerUp(pointer) {
+        if (!this.swipeStart || this.swipeStart.id !== pointer.id) {
+            return;
+        }
+        if (this.swipeSuppressed) {
+            this.swipeStart = null;
+            return;
+        }
+
+        const dx = pointer.worldX - this.swipeStart.x;
+        const dy = pointer.worldY - this.swipeStart.y;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+        const minDistance = Math.max(12, this.grid.size * 0.2);
+
+        if (absDx < minDistance && absDy < minDistance) {
+            this.swipeStart = null;
+            return;
+        }
+
+        let dirX = 0;
+        let dirY = 0;
+        if (absDx > absDy) {
+            dirX = dx > 0 ? 1 : -1;
+        } else {
+            dirY = dy > 0 ? 1 : -1;
+        }
+
+        if (dirX || dirY) {
+            this.tryMove(dirX, dirY, this.pointerCode);
+        }
+
+        this.swipeStart = null;
     }
 
     commandPointer(pointer) {

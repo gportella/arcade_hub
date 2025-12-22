@@ -211,7 +211,7 @@
         display: flex;
         justify-content: center;
         align-items: center;
-        overflow: hidden;
+        overflow: visible;
     }
 
     .hud.hud--compact {

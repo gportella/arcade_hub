@@ -52,13 +52,16 @@
         display: flex;
         flex-direction: column;
         gap: 1rem;
-        padding: clamp(1.4rem, 2vw, 1.9rem);
+        padding: clamp(1.4rem, 2.3vw, 2.15rem);
         border-radius: 1.35rem;
         background: var(--card-bg);
         border: 1px solid var(--card-border);
         box-shadow: var(--glow);
         overflow: hidden;
         height: 100%;
+        max-width: 420px;
+        margin-inline: auto;
+        width: 100%;
     }
 
     .card > * {

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c2938" />
+      <stop offset="1" stop-color="#0f1724" />
+    </linearGradient>
+    <linearGradient id="crate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f0a84b" />
+      <stop offset="1" stop-color="#d4782a" />
+    </linearGradient>
+    <linearGradient id="highlight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffe0a8" stop-opacity="0.8" />
+      <stop offset="1" stop-color="#f0a84b" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)" />
+  <rect x="14" y="12" width="36" height="40" rx="6" fill="url(#crate)" stroke="#6b3a12" stroke-width="2" />
+  <path d="M20 20h24M20 32h24M20 44h24" stroke="#6b3a12" stroke-width="3" stroke-linecap="round" />
+  <path d="M24 18v32" stroke="#8a4f18" stroke-width="3" stroke-linecap="round" />
+  <path d="M40 18v32" stroke="#8a4f18" stroke-width="3" stroke-linecap="round" />
+  <rect x="18" y="16" width="28" height="8" fill="#f7bd66" opacity="0.65" />
+  <path d="M16 14l6 6-6 6" stroke="#fce5bf" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.75" />
+  <path d="M48 14l-6 6 6 6" stroke="#b55a1b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" />
+  <rect x="14" y="12" width="36" height="40" rx="6" fill="url(#highlight)" />
+</svg>

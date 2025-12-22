@@ -134,13 +134,13 @@
 <style>
     .page {
         min-height: 100vh;
-        width: min(1040px, 100%);
+        width: min(1120px, 100%);
         margin: 0 auto;
-        padding: clamp(2.5rem, 3vw + 2rem, 4.5rem)
-            clamp(1.25rem, 2.5vw + 1rem, 3.25rem) 3.5rem;
+        padding: clamp(2.75rem, 3vw + 2rem, 5rem)
+            clamp(1.25rem, 2.5vw + 1rem, 3.25rem) 3.75rem;
         display: flex;
         flex-direction: column;
-        gap: clamp(2rem, 3vw, 2.75rem);
+        gap: clamp(2.5rem, 3.5vw, 3.25rem);
         position: relative;
     }
 
@@ -189,8 +189,11 @@
     .grid {
         display: grid;
         width: 100%;
-        gap: clamp(1.25rem, 2.5vw, 2rem);
-        grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+        gap: clamp(1rem, 2vw, 1.5rem);
+        grid-template-columns: repeat(
+            auto-fit,
+            minmax(min(100%, 360px), 1fr)
+        );
         align-items: stretch;
         position: relative;
     }

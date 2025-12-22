@@ -5,7 +5,7 @@ import { AUTO, Game, Scale } from 'phaser';
 
 // Find out more information about the Game Config at:
 // https://docs.phaser.io/api-documentation/typedef/types-core#gameconfig
-const config = {
+const baseConfig = {
     type: AUTO,
     parent: 'game-container',
     backgroundColor: '#2c2f33',
@@ -25,10 +25,18 @@ const config = {
     scene: [MainGame]
 };
 
-const StartGame = (parent) => {
-
-    return new Game({ ...config, parent });
-
-}
+const StartGame = (parent, width, height) => {
+    const resolvedWidth = Number.isFinite(width) && width > 0 ? width : baseConfig.scale.width;
+    const resolvedHeight = Number.isFinite(height) && height > 0 ? height : baseConfig.scale.height;
+    return new Game({
+        ...baseConfig,
+        parent,
+        scale: {
+            ...baseConfig.scale,
+            width: resolvedWidth,
+            height: resolvedHeight
+        }
+    });
+};
 
 export default StartGame;

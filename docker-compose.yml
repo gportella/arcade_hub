@@ -6,6 +6,7 @@ networks:
   connect4:
   solveparking:
   chesspit:
+  sokoban:
 
 services:
   traefik:
@@ -162,3 +163,24 @@ services:
       - traefik.http.routers.landing.priority=1
       - traefik.http.routers.landing.entrypoints=web
       - traefik.http.services.landing.loadbalancer.server.port=80
+
+  sokoban-frontend:
+    build:
+      context: ./sokoban
+      dockerfile: Dockerfile
+      args:
+        VITE_BASE_PATH: /sokoban/
+    image: arcade-sokoban-frontend:latest
+    container_name: sokoban-frontend
+    restart: unless-stopped
+    networks:
+      - web
+      - sokoban
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.sokoban.rule=PathPrefix(`/sokoban`)
+      - traefik.http.routers.sokoban.priority=100
+      - traefik.http.routers.sokoban.entrypoints=web
+      - traefik.http.routers.sokoban.middlewares=sokoban-strip
+      - traefik.http.services.sokoban.loadbalancer.server.port=80
+      - traefik.http.middlewares.sokoban-strip.stripprefix.prefixes=/sokoban

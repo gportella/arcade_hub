@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     )
     engine_specs: List[EngineSpec] = Field(
         default_factory=lambda: [
-            EngineSpec(key="stockfish", name="Stockfish", binary="stockfish", default_depth=16),
-            EngineSpec(key="skaks", name="Skaks", binary="skaks", default_depth=6),
+            EngineSpec(key="stockfish", name="Stockfish 17.1", binary="stockfish", default_depth=16),
+            EngineSpec(key="skaks", name="Skaks 0.7", binary="skaks", default_depth=6),
         ],
         alias="CHESS_ENGINE_SPECS",
     )

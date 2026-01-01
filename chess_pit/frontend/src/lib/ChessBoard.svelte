@@ -73,6 +73,10 @@
     /** @type {string | null} */
     export let pgn = null;
     export let finished = false;
+    export let analysisSteps = [];
+    export let analysisAnnotations = {};
+    export let onReplayPositionChange = (_detail) => {};
+    export let onReplayStateChange = (_detail) => {};
 
     // PGN cache and derived
     let trimmedPgn = "";
@@ -126,7 +130,6 @@
     );
     $: replayReady = Boolean(trimmedPgn && gameFinished);
     $: allowInteraction = interactive && !gameFinished && !replayActive;
-
     // Replay state
     let replayActive = false;
     let replayChess = null;
@@ -134,6 +137,108 @@
     let replayIdx = 0;
     let replayTimer = null;
     let replaySpeedMs = 700; // autoplay step speed
+    let analysisStepCount = 0;
+    let currentReplayAnalysisIndex = null;
+    let currentReplayAnalysisStep = null;
+    let overlayShapes = [];
+    let currentReplayAnnotation = null;
+    let boardAnnotationTone = "";
+    let annotationSquare = null;
+    let annotationPosition = null;
+
+    $: analysisStepCount = Array.isArray(analysisSteps)
+        ? analysisSteps.length
+        : 0;
+    $: currentReplayAnalysisIndex = (() => {
+        if (!replayActive) {
+            return null;
+        }
+        if (!analysisStepCount) {
+            return null;
+        }
+        const candidate = replayIdx - 1;
+        if (candidate < 0) {
+            return null;
+        }
+        return Math.min(candidate, analysisStepCount - 1);
+    })();
+    $: currentReplayAnalysisStep =
+        typeof currentReplayAnalysisIndex === "number" &&
+        currentReplayAnalysisIndex >= 0 &&
+        currentReplayAnalysisIndex < analysisStepCount
+            ? analysisSteps[currentReplayAnalysisIndex]
+            : null;
+    $: overlayShapes = (() => {
+        if (!replayActive || !currentReplayAnalysisStep) {
+            return [];
+        }
+        const shapes = [];
+        const best = parseUciSegments(currentReplayAnalysisStep.best_move_uci);
+        const played = parseUciSegments(currentReplayAnalysisStep.played_uci);
+        if (best) {
+            shapes.push({ brush: "green", orig: best.from, dest: best.to });
+            shapes.push({ brush: "green", orig: best.to });
+        }
+        if (
+            played &&
+            (!best || best.from !== played.from || best.to !== played.to)
+        ) {
+            shapes.push({ brush: "red", orig: played.from, dest: played.to });
+        }
+        return shapes;
+    })();
+    $: currentReplayAnnotation = (() => {
+        if (!replayActive || !currentReplayAnalysisStep) {
+            return null;
+        }
+        if (!analysisAnnotations) {
+            return null;
+        }
+        return (
+            analysisAnnotations[currentReplayAnalysisStep.move_index] ??
+            null
+        );
+    })();
+    $: boardAnnotationTone = (() => {
+        const marker = currentReplayAnnotation?.marker || "";
+        if (!marker) {
+            return "";
+        }
+        if (marker.includes("#")) {
+            return "mate";
+        }
+        if (marker.includes("??")) {
+            return "blunder";
+        }
+        if (marker.includes("?")) {
+            return "mistake";
+        }
+        if (marker.includes("!!")) {
+            return "brilliant";
+        }
+        if (marker.includes("!")) {
+            return "good";
+        }
+        return "";
+    })();
+    $: annotationSquare = (() => {
+        if (!replayActive || !currentReplayAnalysisStep) {
+            return null;
+        }
+        if (lastMove.length === 2) {
+            return lastMove[1];
+        }
+        const played = parseUciSegments(
+            currentReplayAnalysisStep.played_uci,
+        );
+        if (played?.to) {
+            return played.to;
+        }
+        return null;
+    })();
+    $: annotationPosition = annotationSquare
+        ? squareToPosition(annotationSquare, resolvedOrientation)
+        : null;
 
     // Helper: pick current engine (live vs replay)
     function currentEngine() {
@@ -347,6 +452,33 @@
         return `${player} to move${suffix}`;
     }
 
+    function parseUciSegments(uci) {
+        if (typeof uci !== "string" || uci.length < 4) {
+            return null;
+        }
+        const from = uci.slice(0, 2);
+        const to = uci.slice(2, 4);
+        if (!/^[a-h][1-8]$/.test(from) || !/^[a-h][1-8]$/.test(to)) {
+            return null;
+        }
+        return { from, to };
+    }
+
+    function squareToPosition(square, orientation) {
+        if (typeof square !== "string" || !/^[a-h][1-8]$/.test(square)) {
+            return null;
+        }
+        const file = square.charCodeAt(0) - 97;
+        const rank = Number(square[1]) - 1;
+        const cell = 100 / 8;
+        const fileIndex = orientation === "black" ? 7 - file : file;
+        const rankIndex = orientation === "black" ? rank : 7 - rank;
+        return {
+            left: (fileIndex + 1) * cell - cell * 0.25,
+            top: rankIndex * cell + cell * 0.2,
+        };
+    }
+
     // ===== Captured bars and material delta (canonical baseline) =====
     const canonicalCounts = {
         w: { p: 8, n: 2, b: 2, r: 2, q: 1, k: 1 },
@@ -499,12 +631,21 @@
             },
         };
 
+        config.drawable = {
+            enabled: overlayShapes.length > 0,
+            visible: true,
+            shapes: overlayShapes,
+        };
+
         if (fenChanged) {
             config.fen = currentFen;
             previousBoardFen = currentFen;
         }
 
         boardApi.set(config);
+        if (typeof boardApi.setAutoShapes === "function") {
+            boardApi.setAutoShapes(overlayShapes);
+        }
     }
 
     function promotionLabel(piece) {
@@ -642,6 +783,54 @@
         reset();
     }
 
+    function applyReplayBase(target) {
+        if (!target) {
+            return;
+        }
+        try {
+            if (startingFen) {
+                target.load(startingFen);
+                return;
+            }
+            if (pgnCache.startFen) {
+                target.load(pgnCache.startFen);
+                return;
+            }
+            if (trimmedPgn) {
+                const tmp = new Chess();
+                tmp.loadPgn(trimmedPgn, { strict: false });
+                const headerMap = tmp.header?.() ?? {};
+                if (headerMap.SetUp === "1" && headerMap.FEN) {
+                    target.load(headerMap.FEN);
+                    return;
+                }
+            }
+            target.reset();
+        } catch (error) {
+            console.warn("Failed to set replay base position", error);
+            target.reset();
+        }
+    }
+
+    function notifyReplayState() {
+        onReplayStateChange({
+            active: replayActive,
+            total: replayMoves.length,
+        });
+    }
+
+    function notifyReplayPosition() {
+        const index = replayActive && replayIdx > 0 ? replayIdx - 1 : null;
+        const fenSource = replayActive && replayChess ? replayChess.fen() : game.fen();
+        const fen = normalizeFen(fenSource) ?? fenSource;
+        onReplayPositionChange({
+            active: replayActive,
+            index,
+            total: replayMoves.length,
+            fen,
+        });
+    }
+
     // ===== Replay controls (finalized) =====
     function prepareReplay() {
         if (!trimmedPgn) return;
@@ -699,6 +888,8 @@
         // Render the starting position for replay
         replayActive = true;
         updateState();
+        notifyReplayState();
+        notifyReplayPosition();
     }
 
     function exitReplay() {
@@ -706,6 +897,8 @@
         replayActive = false;
         lastMove = [];
         updateState();
+        notifyReplayState();
+        notifyReplayPosition();
     }
 
     function nextReplay() {
@@ -718,6 +911,7 @@
         });
         lastMove = [m.from, m.to];
         updateState();
+        notifyReplayPosition();
     }
 
     function prevReplay() {
@@ -729,33 +923,73 @@
             ? [history[history.length - 1].from, history[history.length - 1].to]
             : [];
         updateState();
+        notifyReplayPosition();
     }
 
     function resetReplay() {
         if (!replayActive) return;
         try {
-            if (startingFen) {
-                replayChess.load(startingFen);
-            } else if (pgnCache.startFen) {
-                replayChess.load(pgnCache.startFen);
-            } else if (trimmedPgn) {
-                const tmp = new Chess();
-                tmp.loadPgn(trimmedPgn, { strict: false });
-                const headerMap = tmp.header?.() ?? {};
-                if (headerMap.SetUp === "1" && headerMap.FEN) {
-                    replayChess.load(headerMap.FEN);
-                } else {
-                    replayChess.reset();
-                }
-            } else {
-                replayChess.reset();
-            }
+            applyReplayBase(replayChess);
         } catch {
             replayChess.reset();
         }
         replayIdx = 0;
         lastMove = [];
         updateState();
+        notifyReplayPosition();
+    }
+
+    function setReplayIndex(targetIndex) {
+        if (!replayActive || !replayChess) {
+            return;
+        }
+        const total = replayMoves.length;
+        if (!total) {
+            notifyReplayPosition();
+            return;
+        }
+        const clamped = Math.max(-1, Math.min(targetIndex, total - 1));
+        pauseReplay();
+        applyReplayBase(replayChess);
+        replayIdx = 0;
+        lastMove = [];
+        if (clamped >= 0) {
+            for (let i = 0; i <= clamped; i++) {
+                const mv = replayMoves[i];
+                if (!mv) {
+                    break;
+                }
+                replayChess.move({
+                    from: mv.from,
+                    to: mv.to,
+                    promotion: mv.promotion?.toLowerCase(),
+                });
+                replayIdx = i + 1;
+                lastMove = [mv.from, mv.to];
+            }
+        }
+        updateState();
+        notifyReplayPosition();
+    }
+
+    export function seekReplay(targetIndex) {
+        if (!replayReady) {
+            return;
+        }
+        if (!replayActive) {
+            prepareReplay();
+        }
+        if (!replayActive) {
+            return;
+        }
+        setReplayIndex(targetIndex);
+    }
+
+    export function exitReplayMode() {
+        if (!replayActive) {
+            return;
+        }
+        exitReplay();
     }
 
     function playReplay() {
@@ -821,6 +1055,21 @@
                 {movableDests}
                 onMove={handleMove}
             />
+
+            {#if replayActive && currentReplayAnnotation?.marker && annotationPosition}
+                <div
+                    class={`board-annotation${boardAnnotationTone ? ` tone-${boardAnnotationTone}` : ""}`}
+                    role="status"
+                    aria-live="polite"
+                    aria-label={currentReplayAnnotation.label || currentReplayAnnotation.marker}
+                    title={currentReplayAnnotation.label || currentReplayAnnotation.marker}
+                    style={`top: ${annotationPosition.top}%; left: ${annotationPosition.left}%;`}
+                >
+                    <span class="board-annotation-marker" aria-hidden="true">
+                        {currentReplayAnnotation.marker}
+                    </span>
+                </div>
+            {/if}
 
             {#if showPromotionDialog && promotionPending}
                 <div class="promotion-overlay" role="dialog" aria-modal="true">
@@ -993,6 +1242,55 @@
         box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
         border-radius: 1rem;
         overflow: hidden;
+    }
+
+    .board-annotation {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.3rem 0.7rem;
+        border-radius: 999px;
+        color: #ecfeff;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.35);
+        z-index: 4;
+        pointer-events: none;
+        min-width: 2.4rem;
+        opacity: 0.98;
+    }
+
+    .board-annotation.tone-brilliant {
+        background: rgba(22, 163, 74, 0.9);
+    }
+
+    .board-annotation.tone-good {
+        background: rgba(5, 150, 105, 0.9);
+    }
+
+    .board-annotation.tone-mistake {
+        background: rgba(245, 158, 11, 0.92);
+    }
+
+    .board-annotation.tone-blunder {
+        background: rgba(239, 68, 68, 0.92);
+    }
+
+    .board-annotation.tone-mate {
+        background: rgba(124, 58, 237, 0.92);
+    }
+
+    .board-annotation:not(.tone-brilliant):not(.tone-good):not(.tone-mistake):not(.tone-blunder):not(.tone-mate) {
+        background: rgba(5, 150, 105, 0.88);
+    }
+
+    .board-annotation-marker {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 1.28rem;
+        line-height: 1;
+        text-shadow: 0 1px 2px rgba(15, 23, 42, 0.45);
     }
 
     .board :global(.cg-board) {

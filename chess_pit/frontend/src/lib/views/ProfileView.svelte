@@ -1,4 +1,5 @@
 <script>
+    import { t } from "../i18n";
     /**
      * @type {{ username: string; avatar_url?: string | null; games_won: number; games_lost: number; games_drawn: number } | null}
      */
@@ -14,13 +15,41 @@
     const handleInput = (field, value) => {
         onFieldChange(field, value);
     };
+
+    $: backLabel = $t("profile.back");
+    $: logoutLabel = $t("profile.logout");
+    $: updateHeading = $t("profile.update");
+    $: avatarLabel = $t("profile.form.avatar");
+    $: avatarPlaceholder = $t("profile.form.avatarPlaceholder");
+    $: passwordLabel = $t("profile.form.password");
+    $: passwordPlaceholder = $t("profile.form.passwordPlaceholder");
+    $: saveLabel = $t("profile.form.save");
+    $: placeholderText = $t("profile.placeholder");
+    $: avatarAlt = $t("avatar.label", { name: user?.username ?? "" });
+    $: gamesSuffix = gameCount === 1 ? "" : "s";
+    $: gamesCountText = $t("profile.gamesCount", {
+        count: gameCount,
+        suffix: gamesSuffix,
+    });
+    $: winsLabel = $t("profile.stats.wins", { count: user?.games_won ?? 0 });
+    $: lossesLabel = $t("profile.stats.losses", {
+        count: user?.games_lost ?? 0,
+    });
+    $: drawsLabel = $t("profile.stats.draws", { count: user?.games_drawn ?? 0 });
+    const ratingValue = (value) =>
+        typeof value === "number" && Number.isFinite(value) ? Math.round(value) : null;
+    $: ratingLabel = $t("profile.stats.rating", {
+        value: ratingValue(user?.rating) ?? "—",
+    });
 </script>
 
 <main class="profile">
     <header class="profile-header">
-        <button class="secondary small" on:click={onBack}>Back to games</button>
+        <button class="secondary small" on:click={onBack}>{backLabel}</button>
         <div class="header-actions">
-            <button class="secondary small" on:click={onLogout}>Log out</button>
+            <button class="secondary small" on:click={onLogout}>
+                {logoutLabel}
+            </button>
         </div>
     </header>
 
@@ -29,30 +58,29 @@
             <div class="identity">
                 <img
                     src={profileDraft.avatarUrl || user.avatar_url || ""}
-                    alt={`Avatar of ${user.username}`}
+                    alt={avatarAlt}
                 />
                 <div>
                     <h1>{user.username}</h1>
-                    <p class="meta">
-                        {gameCount} game{gameCount === 1 ? "" : "s"} in your library
-                    </p>
+                    <p class="meta">{gamesCountText}</p>
                     <ul class="stats">
-                        <li>Wins: {user.games_won}</li>
-                        <li>Losses: {user.games_lost}</li>
-                        <li>Draws: {user.games_drawn}</li>
+                        <li>{winsLabel}</li>
+                        <li>{lossesLabel}</li>
+                        <li>{drawsLabel}</li>
+                        <li>{ratingLabel}</li>
                     </ul>
                 </div>
             </div>
         </section>
 
         <section class="profile-form glass-panel">
-            <h2>Update profile</h2>
+            <h2>{updateHeading}</h2>
             <form on:submit|preventDefault={onSave}>
-                <label for="avatar">Avatar URL</label>
+                <label for="avatar">{avatarLabel}</label>
                 <input
                     id="avatar"
                     name="avatar"
-                    placeholder="https://..."
+                    placeholder={avatarPlaceholder}
                     value={profileDraft.avatarUrl}
                     on:input={(event) =>
                         handleInput(
@@ -63,12 +91,12 @@
                         )}
                 />
 
-                <label for="password">New password</label>
+                <label for="password">{passwordLabel}</label>
                 <input
                     id="password"
                     name="password"
                     type="password"
-                    placeholder="Leave blank to keep current password"
+                    placeholder={passwordPlaceholder}
                     value={profileDraft.password}
                     on:input={(event) =>
                         handleInput(
@@ -80,12 +108,12 @@
                 />
 
                 <div class="form-actions">
-                    <button type="submit">Save changes</button>
+                    <button type="submit">{saveLabel}</button>
                 </div>
             </form>
         </section>
     {:else}
-        <p class="placeholder">No user loaded.</p>
+        <p class="placeholder">{placeholderText}</p>
     {/if}
 </main>
 

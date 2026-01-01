@@ -1,5 +1,6 @@
 <script>
     import { onMount, onDestroy } from "svelte";
+    import { t } from "../i18n";
 
     let logId = 0;
     function stamp() {
@@ -8,17 +9,173 @@
     onMount(() => console.debug(`[${stamp()}] [mount] ChessBoard`));
     onDestroy(() => console.debug(`[${stamp()}] [destroy] ChessBoard`));
     import ChessBoard from "../ChessBoard.svelte";
+    import GameAnalysisViewer from "../GameAnalysisViewer.svelte";
+    import { evaluationToWdl, toPercentage } from "../utils/evaluation";
 
     /** @type {any} */
     export let game = null;
     export let formatTime = (_iso) => "";
     export let gameStatusLabel = (_game) => "";
-    export let colorLabel = (_color) => "";
     export let onMove = (_event) => {};
     export let onUndo = (_event) => {};
     export let onResign = () => {};
     export let onBack = () => {};
     export let onLogout = () => {};
+    export let analysisEngine = null;
+    export let analysisResult = null;
+    export let analysisError = "";
+    export let isAnalysisLoading = false;
+    export let analysisFetchedAt = null;
+    export let onAnalyze = () => {};
+    export let analysisSteps = [];
+
+    let analysisReplayActive = false;
+    let analysisFocusIndex = null;
+
+    const analysisMissingValue = "-";
+
+    const normalizeSanString = (value) =>
+        typeof value === "string" ? value.replace(/[+#?!]/g, "").trim() : "";
+
+    const formatMate = (mateValue) => {
+        if (typeof mateValue !== "number" || mateValue === 0) {
+            return "";
+        }
+        const moves = Math.abs(mateValue);
+        const colorKey = mateValue > 0 ? "analysis.mateWhite" : "analysis.mateBlack";
+        return $t("analysis.mate", { moves, color: $t(colorKey) });
+    };
+
+    const formatEvaluation = (cpValue, mateValue) => {
+        if (typeof mateValue === "number" && mateValue !== 0) {
+            return formatMate(mateValue);
+        }
+        if (typeof cpValue !== "number") {
+            return $t("analysis.noScore");
+        }
+        const score = cpValue / 100;
+        const digits = Math.abs(score) >= 10 ? 1 : 2;
+        const formatted = score.toFixed(digits);
+        const sign = score > 0 ? "+" : "";
+        return `${sign}${formatted}`;
+    };
+
+    const formatDelta = (before, after, fallback) => {
+        if (typeof before !== "number" || typeof after !== "number") {
+            return fallback;
+        }
+        const delta = after - before;
+        if (delta === 0) {
+            return "0.00";
+        }
+        const value = delta / 100;
+        const digits = Math.abs(value) >= 10 ? 1 : 2;
+        const formatted = value.toFixed(digits);
+        const sign = value > 0 ? "+" : "";
+        return `${sign}${formatted}`;
+    };
+
+    const classifyMoveQuality = (step, { isBestMatch }) => {
+        if (typeof step.played_san === "string" && step.played_san.includes("#")) {
+            return {
+                marker: "#",
+                labelKey: "analysis.annotation.checkmate",
+            };
+        }
+        if (isBestMatch) {
+            return {
+                marker: "!!",
+                labelKey: "analysis.annotation.brilliant",
+            };
+        }
+
+        const beforeCp = step.evaluation_before_cp;
+        const afterCp = step.evaluation_after_cp;
+
+        if (typeof beforeCp === "number" && typeof afterCp === "number") {
+            const deltaCp = afterCp - beforeCp;
+            const normalized = step.turn === "white" ? deltaCp : -deltaCp;
+            if (Number.isFinite(normalized)) {
+                if (normalized >= 150) {
+                    return {
+                        marker: "!!",
+                        labelKey: "analysis.annotation.brilliant",
+                    };
+                }
+                if (normalized >= 70) {
+                    return {
+                        marker: "!",
+                        labelKey: "analysis.annotation.strong",
+                    };
+                }
+                if (normalized >= 35) {
+                    return {
+                        marker: "!?",
+                        labelKey: "analysis.annotation.interesting",
+                    };
+                }
+                if (normalized <= -220) {
+                    return {
+                        marker: "??",
+                        labelKey: "analysis.annotation.blunder",
+                    };
+                }
+                if (normalized <= -140) {
+                    return {
+                        marker: "?",
+                        labelKey: "analysis.annotation.mistake",
+                    };
+                }
+                if (normalized <= -70) {
+                    return {
+                        marker: "?!",
+                        labelKey: "analysis.annotation.dubious",
+                    };
+                }
+            }
+        }
+
+        const mateBefore = step.mate_before;
+        const mateAfter = step.mate_after;
+        if (typeof mateBefore === "number" || typeof mateAfter === "number") {
+            const before = typeof mateBefore === "number" ? mateBefore : null;
+            const after = typeof mateAfter === "number" ? mateAfter : null;
+            if (before !== null && after !== null) {
+                const normalizedMate = step.turn === "white" ? before - after : after - before;
+                if (normalizedMate > 0) {
+                    return {
+                        marker: "!!",
+                        labelKey: "analysis.annotation.brilliant",
+                    };
+                }
+                if (normalizedMate < 0) {
+                    const severity = Math.abs(normalizedMate);
+                    if (severity >= 2) {
+                        return {
+                            marker: "??",
+                            labelKey: "analysis.annotation.blunder",
+                        };
+                    }
+                    return {
+                        marker: "?",
+                        labelKey: "analysis.annotation.mistake",
+                    };
+                }
+            } else if (before === null && after !== null && after > 0) {
+                return {
+                    marker: "!!",
+                    labelKey: "analysis.annotation.brilliant",
+                };
+            } else if (before !== null && before > 0 && after === null) {
+                return {
+                    marker: "??",
+                    labelKey: "analysis.annotation.blunder",
+                };
+            }
+        }
+
+        return { marker: "", labelKey: "" };
+    };
 
     const isActiveGame = () =>
         game?.status === "active" || game?.status === "pending";
@@ -42,14 +199,392 @@
 
     $: active = isActiveGame();
     $: yourTurn = active && game?.turn === game?.yourColor;
-    $: opponentName = game?.opponent?.nickname ?? "";
+    $: opponentNameRaw = game?.opponent?.nickname ?? "";
+    $: opponentName = opponentNameRaw && opponentNameRaw.trim()
+        ? opponentNameRaw
+        : $t("label.unknown");
     $: opponentAvatar = game?.opponent?.avatar ?? "";
     $: lastUpdated = game ? formatTime(game.lastUpdated) : "";
     $: statusLabel = game ? gameStatusLabel(game) : "";
-    $: color = game ? colorLabel(game.yourColor) : "";
+    $: colorTitle = game
+        ? $t(game.yourColor === "black" ? "color.black" : "color.white")
+        : "";
+    $: colorLower = game
+        ? $t(
+              game.yourColor === "black"
+                  ? "color.blackLower"
+                  : "color.whiteLower",
+          )
+        : "";
     $: resultLabel = game?.resultDisplay ?? null;
     $: summary = game?.summary ?? "";
     $: pgn = game?.pgn ?? "";
+    $: summaryText = summary && summary.trim()
+        ? summary.trim()
+        : $t("game.summary.default");
+    $: metaLine = game ? $t("play.meta", { colorTitle, colorLower }) : "";
+    $: updatedLine = game && lastUpdated
+        ? $t("play.updated", { time: lastUpdated })
+        : "";
+    $: backLabel = $t("play.back");
+    $: backAria = $t("play.backAria");
+    $: logoutLabel = $t("play.logout");
+    $: boardControlsLabel = $t("play.controls.board");
+    $: resignLabel = $t("play.controls.resign");
+    $: summaryHeading = $t("play.info.summary");
+    $: resultHeading = $t("play.info.result");
+    $: pgnHeading = $t("play.info.pgn");
+    $: emptyText = $t("play.placeholder");
+    $: opponentAlt = $t("avatar.label", { name: opponentName });
+    $: analysisHeading = $t("analysis.heading");
+    $: analysisLoadingText = $t("analysis.loading");
+    $: analysisPendingText = $t("analysis.pending");
+    $: analysisEngineLabel = $t("analysis.field.engine");
+    $: analysisDepthLabel = $t("analysis.field.depth");
+    $: analysisScoreLabel = $t("analysis.field.score");
+    $: analysisMateLabel = $t("analysis.field.mate");
+    $: analysisBestMoveLabel = $t("analysis.field.bestMove");
+    $: analysisLineLabel = $t("analysis.field.variation");
+    $: analysisEngineFallback = $t("analysis.engineFallback");
+    $: analysisEngineName =
+        analysisResult?.engine?.name ?? analysisEngine?.name ?? "";
+    $: analysisEngineKey = analysisEngine?.key ?? analysisResult?.engine?.key ?? null;
+    $: analysisHasEngine = Boolean(analysisEngineKey);
+    $: analysisCanRequest = Boolean(
+        game?.status === "completed" && analysisHasEngine,
+    );
+    $: analysisUnavailableMessage = (() => {
+        if (!analysisHasEngine) {
+            return $t("analysis.unavailable.engine");
+        }
+        if (!game || game.status !== "completed") {
+            return $t("analysis.unavailable.status");
+        }
+        return "";
+    })();
+    $: analysisRunLabel = isAnalysisLoading
+        ? $t("analysis.running")
+        : $t("analysis.button", {
+              engine: analysisEngineName || analysisEngineFallback,
+          });
+    $: analysisButtonDisabled = !analysisCanRequest || isAnalysisLoading;
+    $: analysisSummary = analysisResult;
+    $: analysisFinalStep = (Array.isArray(analysisSteps) && analysisSteps.length)
+        ? analysisSteps[analysisSteps.length - 1]
+        : null;
+    $: analysisHasResult = Boolean(analysisSummary || (analysisSteps && analysisSteps.length));
+    $: analysisScoreFallback = formatEvaluation(
+        analysisSummary?.evaluation_cp ??
+            analysisFinalStep?.evaluation_after_cp ??
+            analysisFinalStep?.evaluation_before_cp ??
+            null,
+        analysisSummary?.mate_in ??
+            analysisFinalStep?.mate_after ??
+            analysisFinalStep?.mate_before ??
+            null,
+    );
+    $: analysisDepthDisplay = (() => {
+        if (analysisSummary?.depth) {
+            return String(analysisSummary.depth);
+        }
+        if (analysisSummary?.engine?.default_depth) {
+            return String(analysisSummary.engine.default_depth);
+        }
+        if (analysisEngine?.default_depth) {
+            return String(analysisEngine.default_depth);
+        }
+        return analysisMissingValue;
+    })();
+    $: analysisLastRunText = analysisFetchedAt
+        ? $t("analysis.lastRun", { time: formatTime(analysisFetchedAt) })
+        : "";
+    $: analysisSectionVisible = Boolean(
+        game &&
+            (game.status === "completed" ||
+                analysisHasResult ||
+                isAnalysisLoading ||
+                analysisError),
+    );
+    $: analysisTimelineMoveTemplate = (params) =>
+        $t("analysis.timeline.move", params);
+    $: analysisTimelineNoDelta = $t("analysis.timeline.noDelta");
+    $: analysisProbabilityLabels = {
+        heading: $t("analysis.probability.heading"),
+        timeline: $t("analysis.probability.timeline"),
+        aria: $t("analysis.probability.aria"),
+        white: $t("analysis.probability.white"),
+        draw: $t("analysis.probability.draw"),
+        black: $t("analysis.probability.black"),
+    };
+    $: analysisViewerSteps = (Array.isArray(analysisSteps) ? analysisSteps : []).map(
+        (step) => {
+            const moveNumber = Math.ceil(step.move_number / 2);
+            const playerLabel =
+                step.turn === "white" ? $t("color.white") : $t("color.black");
+            const evalBefore = formatEvaluation(step.evaluation_before_cp, step.mate_before);
+            const evalAfter = formatEvaluation(step.evaluation_after_cp, step.mate_after);
+            const delta = formatDelta(step.evaluation_before_cp, step.evaluation_after_cp, analysisTimelineNoDelta);
+            const bestText = (() => {
+                if (step.best_move_san) {
+                    return step.best_move_san;
+                }
+                if (step.best_move_uci) {
+                    return step.best_move_uci;
+                }
+                return $t("analysis.noBest");
+            })();
+            const variation = step.best_line_san?.length
+                ? step.best_line_san.join(" ")
+                : $t("analysis.noLine");
+            const hasBest = Boolean(step.best_move_san || step.best_move_uci);
+            const isBestMatch = hasBest
+                ? normalizeSanString(step.best_move_san || step.best_move_uci) ===
+                  normalizeSanString(step.played_san || step.played_uci)
+                : false;
+            const { marker, labelKey } = classifyMoveQuality(step, { isBestMatch });
+            const probabilities = evaluationToWdl({
+                evaluationCp: step.evaluation_after_cp,
+                mateIn: step.mate_after,
+            });
+            const probabilityPercents = {
+                white: toPercentage(probabilities.white),
+                draw: toPercentage(probabilities.draw),
+                black: toPercentage(probabilities.black),
+            };
+            return {
+                id: step.move_index,
+                title: analysisTimelineMoveTemplate({ number: moveNumber, player: playerLabel }),
+                played: step.played_san ?? step.played_uci ?? analysisMissingValue,
+                evalBefore,
+                evalAfter,
+                delta,
+                best: bestText,
+                variation,
+                isBestMatch,
+                hasBest,
+                annotation: marker,
+                annotationLabel: labelKey ? $t(labelKey) : "",
+                probabilities,
+                probabilityPercents,
+                evaluationBeforeCp: step.evaluation_before_cp ?? null,
+                evaluationAfterCp: step.evaluation_after_cp ?? null,
+                mateBefore: step.mate_before ?? null,
+                mateAfter: step.mate_after ?? null,
+                bestMoveSan: step.best_move_san ?? null,
+                bestMoveUci: step.best_move_uci ?? null,
+            };
+        },
+    );
+    $: analysisProbabilityTimeline = analysisViewerSteps.map((entry, idx) => ({
+        white: entry.probabilities?.white ?? 0,
+        draw: entry.probabilities?.draw ?? 0,
+        black: entry.probabilities?.black ?? 0,
+        whitePercent: entry.probabilityPercents?.white ?? null,
+        drawPercent: entry.probabilityPercents?.draw ?? null,
+        blackPercent: entry.probabilityPercents?.black ?? null,
+        label: entry.title,
+        ply: idx + 1,
+    }));
+    $: analysisViewerStepCount = analysisViewerSteps.length;
+    $: {
+        const total = analysisViewerStepCount;
+        if (!total) {
+            analysisFocusIndex = null;
+        } else if (
+            typeof analysisFocusIndex === "number" &&
+            analysisFocusIndex >= total
+        ) {
+            analysisFocusIndex = total - 1;
+        } else if (analysisFocusIndex === null && !analysisReplayActive) {
+            analysisFocusIndex = total - 1;
+        }
+    }
+    $: analysisViewerEntry =
+        typeof analysisFocusIndex === "number" && analysisFocusIndex >= 0 &&
+        analysisFocusIndex < analysisViewerStepCount
+            ? analysisViewerSteps[analysisFocusIndex]
+            : null;
+    $: analysisScoreText = analysisViewerEntry?.evalAfter ?? analysisScoreFallback;
+    $: analysisMateText = (() => {
+        const activeMate = (() => {
+            if (typeof analysisViewerEntry?.mateAfter === "number" && analysisViewerEntry.mateAfter !== 0) {
+                return analysisViewerEntry.mateAfter;
+            }
+            if (typeof analysisViewerEntry?.mateBefore === "number" && analysisViewerEntry.mateBefore !== 0) {
+                return analysisViewerEntry.mateBefore;
+            }
+            return null;
+        })();
+        if (typeof activeMate === "number") {
+            return formatMate(activeMate);
+        }
+        const fallbackMate =
+            analysisSummary?.mate_in ??
+            analysisFinalStep?.mate_after ??
+            analysisFinalStep?.mate_before ??
+            null;
+        if (typeof fallbackMate === "number" && fallbackMate !== 0) {
+            return formatMate(fallbackMate);
+        }
+        return "";
+    })();
+    $: analysisBestMoveText = (() => {
+        const activeBest = analysisViewerEntry?.best;
+        if (activeBest && activeBest !== $t("analysis.noBest")) {
+            return activeBest;
+        }
+        const activeBestSan = analysisViewerEntry?.bestMoveSan;
+        if (activeBestSan) {
+            return activeBestSan;
+        }
+        const activeBestUci = analysisViewerEntry?.bestMoveUci;
+        if (activeBestUci) {
+            return activeBestUci;
+        }
+        const final = analysisFinalStep;
+        if (final?.best_move_san) {
+            return final.best_move_san;
+        }
+        if (final?.best_move_uci) {
+            return final.best_move_uci;
+        }
+        return $t("analysis.noBest");
+    })();
+    $: analysisLineDisplay = (() => {
+        const activeLine = analysisViewerEntry?.variation;
+        if (activeLine && activeLine !== $t("analysis.noLine")) {
+            return activeLine;
+        }
+        const finalLine = analysisFinalStep?.best_line_san;
+        if (finalLine && finalLine.length) {
+            return finalLine.join(" ");
+        }
+        return $t("analysis.noLine");
+    })();
+    $: analysisShowSummaryDetails = !analysisViewerEntry;
+    $: analysisViewerCounter =
+        typeof analysisFocusIndex === "number" &&
+        analysisViewerStepCount
+            ? $t("analysis.viewer.counter", {
+                  current: analysisFocusIndex + 1,
+                  total: analysisViewerStepCount,
+              })
+            : "";
+    $: analysisViewerBaseLabels = {
+        heading: $t("analysis.viewer.heading"),
+        played: $t("analysis.timeline.played"),
+        evalBefore: $t("analysis.timeline.evalBefore"),
+        evalAfter: $t("analysis.timeline.evalAfter"),
+        delta: $t("analysis.timeline.delta"),
+        best: $t("analysis.timeline.best"),
+        variation: $t("analysis.timeline.variation"),
+        prev: $t("analysis.viewer.prev"),
+        next: $t("analysis.viewer.next"),
+        close: $t("analysis.viewer.close"),
+        sliderAria: $t("analysis.viewer.sliderAria"),
+        empty: $t("analysis.viewer.empty"),
+    };
+    $: analysisViewerLabels = {
+        ...analysisViewerBaseLabels,
+        counter: analysisViewerCounter,
+    };
+    $: analysisAnnotationsByIndex = analysisViewerSteps.reduce(
+        (result, entry) => {
+            if (entry.annotation) {
+                result[entry.id] = {
+                    marker: entry.annotation,
+                    label: entry.annotationLabel,
+                };
+            }
+            return result;
+        },
+        {},
+    );
+
+    const handleAnalyzeClick = () => {
+        if (!analysisCanRequest || isAnalysisLoading) {
+            return;
+        }
+        const engineKey = analysisEngine?.key ?? analysisResult?.engine?.key ?? undefined;
+        onAnalyze({ engineKey });
+    };
+
+    const handleReplayStateChange = (detail) => {
+        analysisReplayActive = Boolean(detail?.active);
+        if (!analysisReplayActive && analysisViewerStepCount) {
+            analysisFocusIndex = analysisViewerStepCount - 1;
+        }
+    };
+
+    const handleReplayPositionChange = (detail) => {
+        if (detail && "active" in detail) {
+            analysisReplayActive = Boolean(detail.active);
+        }
+        const total = analysisViewerStepCount;
+        const nextIndex =
+            typeof detail?.index === "number" && detail.index >= 0 && total
+                ? Math.min(detail.index, total - 1)
+                : null;
+        const resolvedActive = detail?.active ?? analysisReplayActive;
+        if (nextIndex === null) {
+            if (resolvedActive) {
+                analysisFocusIndex = null;
+            }
+            return;
+        }
+        analysisFocusIndex = nextIndex;
+    };
+
+    function seekAnalysisIndex(targetIndex) {
+        if (!analysisViewerStepCount) {
+            return;
+        }
+        if (!boardRef?.seekReplay) {
+            return;
+        }
+        const clamped = Math.max(
+            0,
+            Math.min(targetIndex, analysisViewerStepCount - 1),
+        );
+        analysisFocusIndex = clamped;
+        boardRef.seekReplay(clamped);
+    }
+
+    const handleViewerSeek = (targetIndex) => {
+        if (typeof targetIndex !== "number" || !Number.isFinite(targetIndex)) {
+            return;
+        }
+        seekAnalysisIndex(targetIndex);
+    };
+
+    const handleViewerPrev = () => {
+        if (!analysisViewerStepCount) {
+            return;
+        }
+        const base =
+            typeof analysisFocusIndex === "number" ? analysisFocusIndex : 0;
+        const nextIndex = Math.max(base - 1, 0);
+        seekAnalysisIndex(nextIndex);
+    };
+
+    const handleViewerNext = () => {
+        if (!analysisViewerStepCount) {
+            return;
+        }
+        const base =
+            typeof analysisFocusIndex === "number" ? analysisFocusIndex : -1;
+        const nextIndex = Math.min(
+            base + 1,
+            Math.max(analysisViewerStepCount - 1, 0),
+        );
+        seekAnalysisIndex(nextIndex);
+    };
+
+    const handleViewerClose = () => {
+        if (boardRef?.exitReplayMode) {
+            boardRef.exitReplayMode();
+        }
+    };
 
     // Only update stablePositionFen when game.fen actually changes
     $: if (game?.fen && game.fen !== lastGameFen) {
@@ -61,47 +596,54 @@
 {#if game}
     <main class="play">
         <header class="play-header">
-            <button class="ghost" on:click={onBack} aria-label="Back to games">
-                ← Games
+            <button class="ghost" on:click={onBack} aria-label={backAria}>
+                {backLabel}
             </button>
             <div class="match-overview">
                 <div class="opponent">
                     <img
                         src={opponentAvatar}
-                        alt={`Avatar of ${opponentName}`}
+                        alt={opponentAlt}
                     />
                     <div>
                         <h1>{opponentName}</h1>
                         <p class="meta">
-                            You play {color}
+                            {metaLine}
                             {#if statusLabel}
                                 · {statusLabel}
                             {/if}
                         </p>
                     </div>
                 </div>
-                <p class="timestamp">Updated {lastUpdated}</p>
+                <p class="timestamp">{updatedLine}</p>
             </div>
-            <button class="secondary micro" on:click={onLogout}>Log out</button>
+            <button class="secondary micro" on:click={onLogout}>
+                {logoutLabel}
+            </button>
         </header>
 
-        <section class="board-section">
-            <ChessBoard
-                bind:this={boardRef}
-                startingFen={game.initialFen}
-                positionFen={stablePositionFen}
-                resetToken={game.id}
-                orientation={game.yourColor}
-                {onMove}
-                {onUndo}
-                showStatus={false}
-                showControls={false}
-                interactive={yourTurn}
-                {pgn}
-            />
-            {#if active}
-                <div class="board-controls" aria-label="Board controls">
-                    <!--
+        <div class="play-body">
+            <section class="board-section">
+                <ChessBoard
+                    bind:this={boardRef}
+                    startingFen={game.initialFen}
+                    positionFen={stablePositionFen}
+                    resetToken={game.id}
+                    orientation={game.yourColor}
+                    {onMove}
+                    {onUndo}
+                    showStatus={false}
+                    showControls={false}
+                    interactive={yourTurn}
+                    {pgn}
+                    analysisSteps={analysisSteps}
+                    analysisAnnotations={analysisAnnotationsByIndex}
+                    onReplayPositionChange={handleReplayPositionChange}
+                    onReplayStateChange={handleReplayStateChange}
+                />
+                {#if active}
+                    <div class="board-controls" aria-label={boardControlsLabel}>
+                        <!--
                 <button
                 class="pill"
                 on:click={handleUndoClick}
@@ -110,42 +652,119 @@
                 Undo
                 </button>
                 -->
-                    <button class="pill resign" on:click={handleResignClick}>
-                        Resign
-                    </button>
+                        <button class="pill resign" on:click={handleResignClick}>
+                            {resignLabel}
+                        </button>
+                    </div>
+                {/if}
+            </section>
+
+            <section class="game-info">
+            {#if analysisSectionVisible}
+                <div class="info-card analysis-card">
+                    <div class="analysis-top">
+                        <h2>{analysisHeading}</h2>
+                        <button
+                            class="secondary micro"
+                            on:click={handleAnalyzeClick}
+                            disabled={analysisButtonDisabled}
+                        >
+                            {analysisRunLabel}
+                        </button>
+                    </div>
+
+                    {#if analysisError}
+                        <p class="analysis-error" role="alert">{analysisError}</p>
+                    {:else if isAnalysisLoading}
+                        <p class="analysis-status">{analysisLoadingText}</p>
+                    {:else if !analysisCanRequest}
+                        <p class="analysis-status">{analysisUnavailableMessage}</p>
+                    {:else if analysisHasResult}
+                        <dl class="analysis-grid">
+                            <div>
+                                <dt>{analysisEngineLabel}</dt>
+                                <dd>{analysisEngineName || analysisEngineFallback}</dd>
+                            </div>
+                            <div>
+                                <dt>{analysisDepthLabel}</dt>
+                                <dd>{analysisDepthDisplay}</dd>
+                            </div>
+                            {#if analysisShowSummaryDetails}
+                                <div>
+                                    <dt>{analysisScoreLabel}</dt>
+                                    <dd>{analysisScoreText}</dd>
+                                </div>
+                                {#if analysisMateText}
+                                    <div>
+                                        <dt>{analysisMateLabel}</dt>
+                                        <dd>{analysisMateText}</dd>
+                                    </div>
+                                {/if}
+                                <div>
+                                    <dt>{analysisBestMoveLabel}</dt>
+                                    <dd>{analysisBestMoveText}</dd>
+                                </div>
+                            {/if}
+                        </dl>
+                        {#if analysisShowSummaryDetails}
+                            <div class="analysis-line-block">
+                                <h3>{analysisLineLabel}</h3>
+                                <p>{analysisLineDisplay}</p>
+                            </div>
+                        {/if}
+                        <GameAnalysisViewer
+                            entry={analysisViewerEntry}
+                            index={analysisFocusIndex ?? 0}
+                            total={analysisViewerStepCount}
+                            labels={analysisViewerLabels}
+                            probabilityLabels={analysisProbabilityLabels}
+                            probabilities={analysisViewerEntry?.probabilities}
+                            probabilityPercents={analysisViewerEntry?.probabilityPercents}
+                            probabilityTimeline={analysisProbabilityTimeline}
+                            onPrev={handleViewerPrev}
+                            onNext={handleViewerNext}
+                            onSeek={handleViewerSeek}
+                            onClose={handleViewerClose}
+                        />
+                        {#if analysisLastRunText}
+                            <p class="analysis-updated">{analysisLastRunText}</p>
+                        {/if}
+                    {:else}
+                        <p class="analysis-status">{analysisPendingText}</p>
+                    {/if}
                 </div>
             {/if}
-        </section>
-
-        <section class="game-info">
-            {#if summary}
+            {#if summaryText}
                 <div class="info-card">
-                    <h2>Summary</h2>
-                    <p>{summary}</p>
+                    <h2>{summaryHeading}</h2>
+                    <p>{summaryText}</p>
                 </div>
             {/if}
             {#if resultLabel}
                 <div class="info-card">
-                    <h2>Result</h2>
+                    <h2>{resultHeading}</h2>
                     <p>{resultLabel}</p>
                 </div>
             {/if}
             {#if pgn}
                 <div class="info-card">
-                    <h2>PGN</h2>
+                    <h2>{pgnHeading}</h2>
                     <textarea readonly rows="6">{pgn}</textarea>
                 </div>
             {/if}
-        </section>
+            </section>
+        </div>
     </main>
 {:else}
     <main class="play empty">
         <header class="play-header">
-            <button class="ghost" on:click={onBack}>← Games</button>
+            <button class="ghost" on:click={onBack}>{backLabel}</button>
             <span></span>
-            <button class="secondary micro" on:click={onLogout}>Log out</button>
+            <button class="secondary micro" on:click={onLogout}>
+                {logoutLabel}
+            </button>
         </header>
-        <p class="placeholder">No game selected.</p>
+        <p class="placeholder">{emptyText}</p>
     </main>
 {/if}
 
@@ -158,7 +777,7 @@
         padding: clamp(0.75rem, 3vw, 1.25rem) clamp(1rem, 2.5vw + 1rem, 2.5rem)
             2.5rem;
         width: 100%;
-        max-width: 1100px;
+        max-width: 1280px;
         margin-inline: auto;
     }
 
@@ -244,6 +863,12 @@
         text-overflow: ellipsis;
     }
 
+    .play-body {
+        display: grid;
+        gap: clamp(1rem, 2.5vw, 1.4rem);
+        align-items: start;
+    }
+
     .board-section {
         display: flex;
         flex-direction: column;
@@ -294,10 +919,10 @@
     }
 
     .game-info {
-        display: grid;
-        gap: 1rem;
-        width: min(100%, clamp(640px, 68vw, 940px));
-        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+        width: 100%;
     }
 
     .info-card {
@@ -318,6 +943,96 @@
         margin: 0;
         color: rgba(226, 232, 240, 0.72);
         line-height: 1.5;
+    }
+
+    .analysis-card {
+        gap: 0.8rem;
+    }
+
+    .analysis-top {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+    }
+
+    .analysis-top h2 {
+        margin: 0;
+    }
+
+    .analysis-status {
+        margin: 0;
+        color: rgba(148, 163, 184, 0.78);
+        font-size: 0.9rem;
+    }
+
+    .analysis-error {
+        margin: 0;
+        padding: 0.65rem 0.75rem;
+        border-radius: 12px;
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        background: rgba(239, 68, 68, 0.15);
+        color: #fecaca;
+        font-size: 0.9rem;
+    }
+
+    .analysis-grid {
+        display: grid;
+        gap: 0.75rem 1.25rem;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+
+    .analysis-grid div {
+        display: grid;
+        gap: 0.15rem;
+    }
+
+    .analysis-grid dt {
+        margin: 0;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: rgba(148, 163, 184, 0.75);
+    }
+
+    .analysis-grid dd {
+        margin: 0;
+        font-size: 0.95rem;
+        color: rgba(226, 232, 240, 0.88);
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+    }
+
+    .analysis-line-block {
+        display: grid;
+        gap: 0.25rem;
+    }
+
+    .analysis-line-block h3 {
+        margin: 0;
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: rgba(148, 163, 184, 0.78);
+    }
+
+    .analysis-line-block p {
+        margin: 0;
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 0.92rem;
+        line-height: 1.45;
+        color: rgba(226, 232, 240, 0.9);
+        word-break: break-word;
+    }
+
+    .analysis-card :global(.analysis-viewer) {
+        margin-top: 0.6rem;
+    }
+
+    .analysis-updated {
+        margin: 0;
+        color: rgba(148, 163, 184, 0.68);
+        font-size: 0.78rem;
     }
 
     textarea {
@@ -355,6 +1070,32 @@
     .placeholder {
         margin-top: 4rem;
         color: rgba(226, 232, 240, 0.7);
+    }
+
+    @media (min-width: 960px) {
+        .play-body {
+            grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.1fr);
+            column-gap: clamp(1.1rem, 3vw, 1.8rem);
+        }
+
+        .game-info {
+            position: sticky;
+            top: clamp(1rem, 3vw, 1.6rem);
+            max-height: calc(100vh - clamp(1rem, 3vw, 1.6rem) - 2rem);
+            overflow-y: auto;
+            padding-right: 0.35rem;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+        }
+
+        .game-info::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .game-info::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.3);
+            border-radius: 999px;
+        }
     }
 
     @media (max-width: 640px) {

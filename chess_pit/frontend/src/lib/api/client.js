@@ -119,6 +119,24 @@ export async function requestEngineMove(gameId, payload, token) {
     return handleResponse(response);
 }
 
+export async function analyzeGame(gameId, payload, token) {
+    const response = await fetch(`${API_BASE}/games/${gameId}/analysis`, {
+        method: "POST",
+        headers: buildJsonHeaders(token),
+        body: JSON.stringify(payload ?? {}),
+    });
+    return handleResponse(response);
+}
+
+export async function analyzeGameSequence(gameId, payload, token) {
+    const response = await fetch(`${API_BASE}/games/${gameId}/analysis/sequence`, {
+        method: "POST",
+        headers: buildJsonHeaders(token),
+        body: JSON.stringify(payload ?? {}),
+    });
+    return handleResponse(response);
+}
+
 export async function finishGame(gameId, payload, token) {
     const response = await fetch(`${API_BASE}/games/${gameId}/finish`, {
         method: "POST",

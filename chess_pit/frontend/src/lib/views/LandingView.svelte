@@ -1,8 +1,16 @@
 <script>
     import { onMount, onDestroy } from "svelte";
+    import { get } from "svelte/store";
     import { Chess } from "chess.js";
     import ChessBoard from "../ChessBoard.svelte";
     import { createMiniEngine } from "../engine/miniEngine.js";
+    import {
+        detectInitialLocale,
+        locale,
+        setLocale,
+        supportedLocales,
+        t,
+    } from "../i18n";
 
     export let showcaseFen = "";
     export let onPlay = (_credentials) => {};
@@ -13,17 +21,59 @@
     let username = "";
     let password = "";
 
+    const localeLabels = {
+        en: "locale.english",
+        ca: "locale.catalan",
+    };
+    const languageOptions = supportedLocales
+        .map((code) => ({
+            code,
+            labelKey: localeLabels[code] ?? null,
+        }))
+        .filter((option) => option.labelKey);
+    const detectedLocale = detectInitialLocale();
+    let gameStatusKey = "";
+    let gameStatusParams = {};
+    let isGameOver = false;
+
+    $: translatedLanguageOptions = languageOptions.map((option) => ({
+        ...option,
+        label: $t(option.labelKey),
+    }));
+
+    $: localeNote =
+        $locale === detectedLocale
+            ? $t("notice.language.detected")
+            : $t("notice.language.manual");
+
     const loginGame = new Chess();
     let miniEngine = null;
     let boardPosition = showcaseFen;
     let isThinking = false;
     let previousShowcase = null;
     let isActive = true;
-    let gameStatus = "";
-    let isGameOver = false;
+
+    function handleLocaleSelect(code) {
+        if (!code) {
+            return;
+        }
+        const current = get(locale);
+        if (code === current) {
+            return;
+        }
+        setLocale(code);
+    }
 
     function describeSide(color) {
-        return color === "w" ? "White" : "Black";
+        const translator = get(t);
+        return color === "w"
+            ? translator("color.white")
+            : translator("color.black");
+    }
+
+    function setGameStatus(key = "", params = {}) {
+        gameStatusKey = key;
+        gameStatusParams = params;
     }
 
     function evaluateGameOutcome() {
@@ -32,37 +82,41 @@
                 loginGame.turn() === "w"
                     ? describeSide("b")
                     : describeSide("w");
-            gameStatus = `${winner} wins by checkmate`;
+            setGameStatus("landing.status.checkmate", { winner });
             isGameOver = true;
             return;
         }
 
         if (loginGame.isStalemate()) {
-            gameStatus = "Draw by stalemate";
+            setGameStatus("landing.status.stalemate");
             isGameOver = true;
             return;
         }
 
         if (loginGame.isThreefoldRepetition()) {
-            gameStatus = "Draw by repetition";
+            setGameStatus("landing.status.repetition");
             isGameOver = true;
             return;
         }
 
         if (loginGame.isInsufficientMaterial()) {
-            gameStatus = "Draw by insufficient material";
+            setGameStatus("landing.status.insufficient");
             isGameOver = true;
             return;
         }
 
         if (loginGame.isDraw()) {
-            gameStatus = "Draw";
+            setGameStatus("landing.status.draw");
             isGameOver = true;
             return;
         }
 
-        gameStatus = "";
+        setGameStatus();
         isGameOver = false;
+    }
+
+    $: if ($locale) {
+        evaluateGameOutcome();
     }
 
     function initialiseMiniGame() {
@@ -79,7 +133,7 @@
         }
         boardPosition = loginGame.fen();
         previousShowcase = showcaseFen;
-        gameStatus = "";
+        setGameStatus();
         isGameOver = false;
         evaluateGameOutcome();
     }
@@ -176,13 +230,32 @@
 
 <main class="landing">
     <section class="landing-card glass-panel">
+        {#if translatedLanguageOptions.length > 1}
+            <div class="language-switcher">
+                <div
+                    class="landing-lang"
+                    role="group"
+                    aria-label={$t("landing.language.label")}
+                >
+                    {#each translatedLanguageOptions as option}
+                        <button
+                            type="button"
+                            class:active={option.code === $locale}
+                            on:click={() => handleLocaleSelect(option.code)}
+                            aria-pressed={option.code === $locale}
+                            aria-label={$t("landing.language.aria")}
+                        >
+                            {option.label}
+                        </button>
+                    {/each}
+                </div>
+                <p class="language-note">{localeNote}</p>
+            </div>
+        {/if}
         <div class="landing-header">
-            <span class="landing-badge">Arcade Hub · Chess Pit</span>
-            <h1>Ready to rook on</h1>
-            <p class="landing-copy">
-                Fire up the board, then tap play to jump straight into your
-                matches.
-            </p>
+            <span class="landing-badge">{$t("landing.badge")}</span>
+            <h1>{$t("landing.title")}</h1>
+            <p class="landing-copy">{$t("landing.copy")}</p>
         </div>
         <div class="landing-board-shell">
             <ChessBoard
@@ -193,29 +266,29 @@
                 interactive={!isThinking && !isGameOver}
                 onMove={handleBoardMove}
             />
-            {#if gameStatus}
+            {#if gameStatusKey}
                 <p class="landing-status" role="status" aria-live="polite">
-                    {gameStatus}
+                    {$t(gameStatusKey, gameStatusParams)}
                 </p>
             {/if}
         </div>
         <form class="landing-form" on:submit|preventDefault={submit}>
-            <label for="username">Username</label>
+            <label for="username">{$t("landing.form.username")}</label>
             <input
                 id="username"
                 name="username"
                 autocomplete="username"
-                placeholder="player"
+                placeholder={$t("landing.form.usernamePlaceholder")}
                 bind:value={username}
                 required
             />
-            <label for="password">Password</label>
+            <label for="password">{$t("landing.form.password")}</label>
             <input
                 id="password"
                 name="password"
                 type="password"
                 autocomplete="current-password"
-                placeholder="••••••••"
+                placeholder={$t("landing.form.passwordPlaceholder")}
                 bind:value={password}
                 required
             />
@@ -224,7 +297,9 @@
             {/if}
             <div class="landing-actions">
                 <button type="submit" disabled={isLoading}>
-                    {isLoading ? "Signing in…" : "Play"}
+                    {isLoading
+                        ? $t("landing.actions.signingIn")
+                        : $t("landing.actions.play")}
                 </button>
                 <button
                     class="secondary compact"
@@ -232,7 +307,7 @@
                     on:click={submitAdmin}
                     disabled={isLoading}
                 >
-                    Admin login
+                    {$t("landing.actions.admin")}
                 </button>
             </div>
         </form>
@@ -254,6 +329,50 @@
         display: flex;
         flex-direction: column;
         gap: 1.5rem;
+    }
+
+    .language-switcher {
+        align-self: flex-end;
+        display: grid;
+        gap: 0.35rem;
+        text-align: right;
+    }
+
+    .landing-lang {
+        display: inline-flex;
+        gap: 0.35rem;
+        padding: 0.25rem;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(8px);
+    }
+
+    .landing-lang button {
+        border: none;
+        background: transparent;
+        color: rgba(226, 232, 240, 0.75);
+        font-weight: 600;
+        font-size: 0.82rem;
+        padding: 0.35rem 0.65rem;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .landing-lang button:hover {
+        background: rgba(59, 130, 246, 0.28);
+        color: #e0f2fe;
+    }
+
+    .landing-lang button.active {
+        background: rgba(37, 99, 235, 0.65);
+        color: #e0f2fe;
+    }
+
+    .language-note {
+        margin: 0;
+        font-size: 0.75rem;
+        color: rgba(148, 163, 184, 0.7);
     }
 
     .landing-header {
@@ -339,6 +458,11 @@
         .landing-card {
             padding: 1.5rem;
             gap: 1.25rem;
+        }
+
+        .language-switcher {
+            align-self: center;
+            text-align: center;
         }
 
         .landing-actions {

@@ -1,10 +1,14 @@
 """Game endpoints."""
 
+import asyncio
+import json
+from contextlib import suppress
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Awaitable, Callable, Optional
 
 import chess
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -34,6 +38,7 @@ from ..schemas import (
 from ..services.engine_runner import (
     EngineMoveError,
     EngineProcessError,
+    EngineAnalysis,
     compute_analysis,
     compute_best_move,
 )
@@ -42,68 +47,32 @@ from ..utils.fen import active_color, fen_hash, normalize_fen
 router = APIRouter(prefix="/games", tags=["games"])
 
 
-def _finalize_game(
-    session: Session,
-    game: Game,
-    result: GameResult,
-    *,
-    summary_note: str | None = None,
-) -> Game:
-    game = finish_game(session, game, result)
-
-    note = (summary_note or "").strip()
-    if note:
-        current_summary = game.summary or ""
-        if note.lower() not in current_summary.lower():
-            game.summary = f"{current_summary} · {note}".strip(" ·") if current_summary else note
-
-    session.add(game)
-
-    white_player = session.get(User, game.white_player_id)
-    black_player = session.get(User, game.black_player_id)
-
-    if white_player:
-        if result == GameResult.white:
-            update_user_stats(session, white_player, won=True)
-        elif result == GameResult.black:
-            update_user_stats(session, white_player, lost=True)
-        else:
-            update_user_stats(session, white_player, draw=True)
-
-    if black_player:
-        if result == GameResult.white:
-            update_user_stats(session, black_player, lost=True)
-        elif result == GameResult.black:
-            update_user_stats(session, black_player, won=True)
-        else:
-            update_user_stats(session, black_player, draw=True)
-
-    _update_ratings(session, white_player, black_player, result)
-
-    session.refresh(game)
-    return game
-
-
-def _resolve_engine_spec(engine_key: str | None, settings: Settings | None = None) -> EngineSpec:
-    settings = settings or get_settings()
-    selected_key = engine_key or (settings.engine_specs[0].key if settings.engine_specs else None)
-    if selected_key is None:
+def _resolve_engine_spec(engine_key: str | None, settings: Settings) -> EngineSpec:
+    if engine_key:
+        for spec in settings.engine_specs:
+            if spec.key == engine_key:
+                return spec
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="No engines configured",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Requested engine is not configured",
         )
-    for spec in settings.engine_specs:
-        if spec.key == selected_key:
-            return spec
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engine not found")
+
+    if settings.engine_specs:
+        return settings.engine_specs[0]
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="No chess engines configured",
+    )
 
 
 def _clamp_depth_for_spec(depth: int | None, spec: EngineSpec | None) -> int | None:
     if depth is None:
         return None
-    cap = spec.max_depth if spec and spec.max_depth is not None else 64
-    cap = max(1, min(cap, 64))
-    return max(1, min(depth, cap))
+    bounded = max(1, depth)
+    if spec and spec.max_depth is not None:
+        bounded = min(bounded, spec.max_depth)
+    return bounded
 
 
 def _resolve_analysis_context(
@@ -112,24 +81,129 @@ def _resolve_analysis_context(
     game: Game,
     settings: Settings,
 ) -> tuple[EngineSpec, int]:
-    spec = _resolve_engine_spec(payload_engine_key, settings)
-    configured_depth = (
-        payload_depth or game.engine_depth or spec.default_depth or settings.engine_default_depth
+    spec = _resolve_engine_spec(
+        payload_engine_key
+        or getattr(game.white_player, "engine_key", None)
+        or getattr(game.black_player, "engine_key", None),
+        settings,
     )
-    desired_depth = _clamp_depth_for_spec(configured_depth, spec) or settings.engine_default_depth
-    depth = max(4, desired_depth)
+
+    configured_depth = (
+        payload_depth
+        or game.engine_depth
+        or spec.default_depth
+        or settings.engine_default_depth
+    )
+    desired_depth = _clamp_depth_for_spec(configured_depth, spec)
+    depth = desired_depth or settings.engine_default_depth
     return spec, depth
+
+
+async def _run_analysis_sequence(
+    game: Game,
+    spec: EngineSpec,
+    depth: int,
+    *,
+    step_handler: Optional[Callable[[GameAnalysisStep], Awaitable[None] | None]] = None,
+    collect_steps: bool = True,
+) -> tuple[list[GameAnalysisStep], EngineAnalysis | None]:
+    """Execute a full engine analysis sequence, optionally streaming step updates."""
+
+    try:
+        board = chess.Board(game.initial_fen)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Invalid game position",
+        ) from exc
+
+    steps: list[GameAnalysisStep] = [] if collect_steps else []
+
+    session_moves = getattr(game, "moves", None)
+    ordered_moves = []
+    if session_moves is not None:
+        ordered_moves = sorted(session_moves, key=lambda move: move.move_number)
+
+    try:
+        current_analysis = await run_in_threadpool(
+            compute_analysis,
+            spec,
+            board.copy(),
+            depth=depth,
+        )
+    except EngineProcessError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    for index, move in enumerate(ordered_moves):
+        turn_color = "white" if board.turn == chess.WHITE else "black"
+        fen_before = board.fen()
+
+        try:
+            actual_move = board.parse_san(move.notation)
+        except ValueError:
+            actual_move = _match_move_by_fen(board, move.fen)
+
+        if actual_move is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Unable to replay move {move.move_number} for analysis",
+            )
+
+        played_san = board.san(actual_move)
+        played_uci = actual_move.uci()
+        board.push(actual_move)
+        fen_after = board.fen()
+
+        try:
+            next_analysis = await run_in_threadpool(
+                compute_analysis,
+                spec,
+                board.copy(),
+                depth=depth,
+            )
+        except EngineProcessError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+        step = GameAnalysisStep(
+            move_index=index,
+            move_number=move.move_number,
+            turn=turn_color,
+            played_san=played_san,
+            played_uci=played_uci,
+            evaluation_before_cp=current_analysis.evaluation_cp,
+            evaluation_after_cp=next_analysis.evaluation_cp,
+            mate_before=current_analysis.mate_in,
+            mate_after=next_analysis.mate_in,
+            best_move_uci=current_analysis.best_move_uci,
+            best_move_san=current_analysis.best_move_san,
+            best_line_uci=current_analysis.line_uci,
+            best_line_san=current_analysis.line_san,
+            fen_before=fen_before,
+            fen_after=fen_after,
+        )
+
+        if collect_steps:
+            steps.append(step)
+
+        if step_handler is not None:
+            maybe = step_handler(step)
+            if asyncio.iscoroutine(maybe):
+                await maybe
+
+        current_analysis = next_analysis
+
+    return steps if collect_steps else [], current_analysis
 
 
 def _match_move_by_fen(board: chess.Board, target_fen: str | None) -> chess.Move | None:
     if not target_fen:
         return None
-    normalized_target = normalize_fen(target_fen)
+    normalized_target = normalize_fen(target_fen, board.fen())
     for candidate in board.legal_moves:
         board.push(candidate)
         fen_after = board.fen()
         board.pop()
-        if normalize_fen(fen_after) == normalized_target:
+        if normalize_fen(fen_after, fen_after) == normalized_target:
             return candidate
     return None
 
@@ -595,6 +669,7 @@ async def analyze_game(
         )
 
     settings = get_settings()
+    session.refresh(game, attribute_names=["white_player", "black_player"])
     spec, depth = _resolve_analysis_context(payload.engine_key, payload.depth, game, settings)
 
     try:
@@ -647,89 +722,12 @@ async def analyze_game_sequence(
             detail="Cannot analyze this game",
         )
 
-    if game.status != GameStatus.completed:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Analysis available after the game is completed",
-        )
-
     settings = get_settings()
+    session.refresh(game, attribute_names=["white_player", "black_player"])
     spec, depth = _resolve_analysis_context(payload.engine_key, payload.depth, game, settings)
 
-    try:
-        board = chess.Board(game.initial_fen)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Invalid game position",
-        ) from exc
-
     session.refresh(game, attribute_names=["moves"])
-    ordered_moves = sorted(game.moves, key=lambda move: move.move_number)
-
-    try:
-        current_analysis = await run_in_threadpool(
-            compute_analysis,
-            spec,
-            board.copy(),
-            depth=depth,
-        )
-    except EngineProcessError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-
-    steps: list[GameAnalysisStep] = []
-
-    for index, move in enumerate(ordered_moves):
-        turn_color = "white" if board.turn == chess.WHITE else "black"
-        fen_before = board.fen()
-
-        try:
-            actual_move = board.parse_san(move.notation)
-        except ValueError:
-            actual_move = _match_move_by_fen(board, move.fen)
-
-        if actual_move is None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Unable to replay move {move.move_number} for analysis",
-            )
-
-        played_san = board.san(actual_move)
-        played_uci = actual_move.uci()
-        board.push(actual_move)
-        fen_after = board.fen()
-
-        try:
-            next_analysis = await run_in_threadpool(
-                compute_analysis,
-                spec,
-                board.copy(),
-                depth=depth,
-            )
-        except EngineProcessError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-
-        steps.append(
-            GameAnalysisStep(
-                move_index=index,
-                move_number=move.move_number,
-                turn=turn_color,
-                played_san=played_san,
-                played_uci=played_uci,
-                evaluation_before_cp=current_analysis.evaluation_cp,
-                evaluation_after_cp=next_analysis.evaluation_cp,
-                mate_before=current_analysis.mate_in,
-                mate_after=next_analysis.mate_in,
-                best_move_uci=current_analysis.best_move_uci,
-                best_move_san=current_analysis.best_move_san,
-                best_line_uci=current_analysis.line_uci,
-                best_line_san=current_analysis.line_san,
-                fen_before=fen_before,
-                fen_after=fen_after,
-            )
-        )
-
-        current_analysis = next_analysis
+    steps, final_analysis = await _run_analysis_sequence(game, spec, depth)
 
     return GameAnalysisSequenceResponse(
         engine=EngineInfo(
@@ -738,11 +736,117 @@ async def analyze_game_sequence(
             default_depth=spec.default_depth,
             max_depth=spec.max_depth,
         ),
-        depth=current_analysis.depth,
+        depth=final_analysis.depth if final_analysis else depth,
         steps=steps,
-        final_evaluation_cp=current_analysis.evaluation_cp,
-        final_mate_in=current_analysis.mate_in,
+        final_evaluation_cp=final_analysis.evaluation_cp if final_analysis else None,
+        final_mate_in=final_analysis.mate_in if final_analysis else None,
     )
+
+
+@router.post("/{game_id}/analysis/sequence/stream")
+async def stream_game_analysis_sequence(
+    game_id: int,
+    payload: GameAnalysisSequenceRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> StreamingResponse:
+    game = get_game(session, game_id)
+    if game is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
+
+    if not current_user.is_admin and current_user.id not in {
+        game.white_player_id,
+        game.black_player_id,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot analyze this game",
+        )
+
+    settings = get_settings()
+    session.refresh(game, attribute_names=["white_player", "black_player"])
+    spec, depth = _resolve_analysis_context(payload.engine_key, payload.depth, game, settings)
+
+    queue: asyncio.Queue[object] = asyncio.Queue()
+    sentinel = object()
+
+    async def push_event(event: dict) -> None:
+        payload_str = json.dumps(event, separators=(",", ":")) + "\n"
+        await queue.put(payload_str)
+
+    async def step_handler(step: GameAnalysisStep) -> None:
+        await push_event({"type": "step", "payload": step.model_dump()})
+
+    async def run_sequence() -> None:
+        try:
+            session.refresh(game, attribute_names=["moves"])
+            _, final_analysis = await _run_analysis_sequence(
+                game,
+                spec,
+                depth,
+                step_handler=step_handler,
+                collect_steps=False,
+            )
+
+            await push_event(
+                {
+                    "type": "complete",
+                    "payload": {
+                        "depth": final_analysis.depth if final_analysis else depth,
+                        "final_evaluation_cp": final_analysis.evaluation_cp if final_analysis else None,
+                        "final_mate_in": final_analysis.mate_in if final_analysis else None,
+                    },
+                }
+            )
+        except HTTPException as exc:
+            await push_event(
+                {
+                    "type": "error",
+                    "payload": {"status": exc.status_code, "detail": exc.detail},
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive guard
+            await push_event(
+                {
+                    "type": "error",
+                    "payload": {"status": 500, "detail": str(exc)},
+                }
+            )
+        finally:
+            await queue.put(sentinel)
+
+    await push_event(
+        {
+            "type": "meta",
+            "payload": {
+                "engine": {
+                    "key": spec.key,
+                    "name": spec.name,
+                    "default_depth": spec.default_depth,
+                    "max_depth": spec.max_depth,
+                },
+                "depth": depth,
+                "game_id": game.id,
+            },
+        }
+    )
+
+    sequence_task = asyncio.create_task(run_sequence())
+
+    async def event_stream():
+        try:
+            while True:
+                item = await queue.get()
+                if item is sentinel:
+                    break
+                if isinstance(item, str):
+                    yield item
+        finally:
+            sequence_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await sequence_task
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 @router.post("/{game_id}/resign", response_model=GameRead)
@@ -799,3 +903,40 @@ async def mark_game_finished(
     game = _finalize_game(session, game, payload.result)
     await broadcast_game_finished(game)
     return GameRead.model_validate(game)
+
+
+def _finalize_game(
+    session: Session,
+    game: Game,
+    result: GameResult,
+    *,
+    summary_note: Optional[str] = None,
+) -> Game:
+    note = summary_note.strip() if summary_note else ""
+
+    game = finish_game(session, game, result)
+
+    if note:
+        existing_summary = (game.summary or "").strip()
+        combined = f"{existing_summary} — {note}" if existing_summary else note
+        game.summary = combined[:255]
+
+    session.refresh(game, attribute_names=["white_player", "black_player"])
+    white_player = game.white_player
+    black_player = game.black_player
+
+    _update_ratings(session, white_player, black_player, result)
+
+    is_draw = result == GameResult.draw
+    white_won = result == GameResult.white
+    black_won = result == GameResult.black
+
+    if white_player is not None:
+        update_user_stats(session, white_player, won=white_won, lost=black_won, draw=is_draw)
+    if black_player is not None:
+        update_user_stats(session, black_player, won=black_won, lost=white_won, draw=is_draw)
+
+    session.add(game)
+    session.commit()
+    session.refresh(game)
+    return game

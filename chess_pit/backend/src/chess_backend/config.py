@@ -17,6 +17,8 @@ class EngineSpec(BaseModel):
     binary: str = Field(min_length=1)
     default_depth: Optional[int] = Field(default=None, ge=1, le=64)
     max_depth: Optional[int] = Field(default=None, ge=1, le=64)
+    move_time_limit_ms: Optional[int] = Field(default=None, ge=50, le=600000)
+    analysis_time_limit_ms: Optional[int] = Field(default=None, ge=50, le=900000)
 
     @field_validator("default_depth")
     @classmethod
@@ -52,7 +54,7 @@ class Settings(BaseSettings):
                 key="stockfish",
                 name="Stockfish 17.1",
                 binary="stockfish",
-                default_depth=16,
+                default_depth=12,
                 max_depth=64,
             ),
             EngineSpec(

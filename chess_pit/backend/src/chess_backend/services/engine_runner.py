@@ -52,9 +52,15 @@ def compute_best_move(
 ) -> EngineMove:
     """Return the best move suggested by *spec* for *board* at a fixed depth."""
 
+    limit_kwargs: dict[str, float | int] = {}
+    if depth:
+        limit_kwargs["depth"] = depth
+    if spec.move_time_limit_ms is not None:
+        limit_kwargs["time"] = max(0.05, spec.move_time_limit_ms / 1000)
+
     try:
         with chess.engine.SimpleEngine.popen_uci(spec.binary) as engine:
-            limit = chess.engine.Limit(depth=depth)
+            limit = chess.engine.Limit(**limit_kwargs)
             result = engine.play(board, limit)
     except FileNotFoundError as exc:
         raise EngineProcessError(f"Engine binary '{spec.binary}' not found") from exc
@@ -83,9 +89,15 @@ def compute_analysis(
 ) -> EngineAnalysis:
     """Return a principal variation and evaluation for *board* at a fixed depth."""
 
+    limit_kwargs: dict[str, float | int] = {}
+    if depth:
+        limit_kwargs["depth"] = depth
+    if spec.analysis_time_limit_ms is not None:
+        limit_kwargs["time"] = max(0.05, spec.analysis_time_limit_ms / 1000)
+
     try:
         with chess.engine.SimpleEngine.popen_uci(spec.binary) as engine:
-            limit = chess.engine.Limit(depth=depth)
+            limit = chess.engine.Limit(**limit_kwargs)
             info = engine.analyse(board, limit, multipv=1)
     except FileNotFoundError as exc:
         raise EngineProcessError(f"Engine binary '{spec.binary}' not found") from exc
@@ -129,8 +141,10 @@ def compute_analysis(
         best_move.uci() if best_move else None,
     )
 
+    reported_depth = info.get("depth") if isinstance(info, dict) else None
+
     return EngineAnalysis(
-        depth=depth,
+        depth=int(reported_depth) if reported_depth is not None else depth,
         best_move_uci=best_move.uci() if best_move else None,
         best_move_san=best_move_san,
         evaluation_cp=evaluation_cp,

@@ -9,55 +9,42 @@ export function createClockStore({
     tickInterval = 250,
 } = {}) {
     let frame = null;
-    let lastUpdate = Date.now();
+    let lastTick = Date.now();
     let white = initialWhite;
     let black = initialBlack;
     let startTime = turnStart ? Date.parse(turnStart) : null;
     let color = activeColor;
     let running = isActive;
 
-    const calculate = () => {
+    // Helper to emit current values to subscribers
+    const snapshot = () => ({
+        whiteRemaining: white,
+        blackRemaining: black,
+        activeColor: color,
+        running,
+    });
+
+    const tick = () => {
         const now = Date.now();
-        if (running && startTime !== null) {
-            const elapsedMs = Math.max(0, now - startTime);
-            if (color === "white" && white !== null) {
-                white = Math.max(0, initialWhite === null ? white : initialWhite - elapsedMs / 1000);
-            } else if (color === "black" && black !== null) {
-                black = Math.max(0, initialBlack === null ? black : initialBlack - elapsedMs / 1000);
-            }
+        const deltaMs = Math.max(0, now - lastTick);
+        lastTick = now;
+        if (!running) return;
+        const deltaSec = deltaMs / 1000;
+        if (color === "white" && typeof white === "number") {
+            white = Math.max(0, white - deltaSec);
+            if (white === 0) running = false;
+        } else if (color === "black" && typeof black === "number") {
+            black = Math.max(0, black - deltaSec);
+            if (black === 0) running = false;
         }
-        lastUpdate = now;
-        return {
-            whiteRemaining: white,
-            blackRemaining: black,
-            activeColor: color,
-            running,
-        };
-    };
-
-    const start = (currentColor, startTimestamp) => {
-        color = currentColor;
-        startTime = typeof startTimestamp === "number" ? startTimestamp : Date.parse(startTimestamp ?? "");
-        running = true;
-        schedule();
-    };
-
-    const stop = (updates = {}) => {
-        if (updates.white !== undefined) {
-            white = updates.white;
-        }
-        if (updates.black !== undefined) {
-            black = updates.black;
-        }
-        running = false;
-        startTime = null;
-        cancel();
     };
 
     const schedule = () => {
         cancel();
+        lastTick = Date.now();
         frame = setInterval(() => {
-            subscribers.forEach((subscriber) => subscriber(calculate()));
+            tick();
+            subscribers.forEach((s) => s(snapshot()));
         }, tickInterval);
     };
 
@@ -70,18 +57,42 @@ export function createClockStore({
 
     const subscribers = new Set();
 
-    const store = readable(calculate(), (set) => {
+    const store = readable(snapshot(), (set) => {
         subscribers.add(set);
-        if (running) {
-            schedule();
-        }
+        // start scheduler if this store is currently running
+        if (running) schedule();
         return () => {
             subscribers.delete(set);
-            if (!subscribers.size) {
-                cancel();
-            }
+            if (!subscribers.size) cancel();
         };
     });
+
+    const start = (currentColor, startTimestamp) => {
+        color = currentColor ?? color;
+        // If server provided a start timestamp, use it to compute elapsed since then
+        if (startTimestamp) {
+            startTime = typeof startTimestamp === "number" ? startTimestamp : Date.parse(startTimestamp);
+        } else {
+            startTime = Date.now();
+        }
+        // Reset lastTick so first delta is small
+        lastTick = Date.now();
+        running = true;
+        schedule();
+    };
+
+    const stop = (updates = {}) => {
+        if (updates.white !== undefined && typeof updates.white === "number") {
+            white = updates.white;
+        }
+        if (updates.black !== undefined && typeof updates.black === "number") {
+            black = updates.black;
+        }
+        running = false;
+        startTime = null;
+        cancel();
+        subscribers.forEach((s) => s(snapshot()));
+    };
 
     return {
         subscribe: store.subscribe,
@@ -94,27 +105,27 @@ export function createClockStore({
             active,
             activeColor: newColor,
         }) {
+            // Accept numeric values from server; otherwise keep current
             white = typeof whiteRemaining === "number" ? whiteRemaining : white;
             black = typeof blackRemaining === "number" ? blackRemaining : black;
             color = newColor ?? color;
             running = Boolean(active);
             startTime = turnStartTime ? Date.parse(turnStartTime) : null;
+            // If the server says it's running, ensure scheduler is active
             if (running) {
-                initialWhite = white;
-                initialBlack = black;
+                // align lastTick to now so the next tick is accurate
+                lastTick = Date.now();
                 schedule();
             } else {
                 cancel();
             }
-            subscribers.forEach((subscriber) => subscriber(calculate()));
+            subscribers.forEach((s) => s(snapshot()));
         },
     };
 }
 
 export function formatClock(seconds) {
-    if (seconds == null) {
-        return "--:--";
-    }
+    if (seconds == null) return "--:--";
     const clamped = Math.max(0, Math.floor(seconds));
     const minutes = Math.floor(clamped / 60);
     const secs = clamped % 60;

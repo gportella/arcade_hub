@@ -316,11 +316,17 @@
 
 <style>
     .landing {
-        width: min(480px, 100%);
+        width: min(620px, 100%);
         display: flex;
         align-items: center;
         justify-content: center;
         margin: 0 auto;
+    }
+
+    @media (min-width: 1280px) {
+        .landing {
+            width: min(720px, 100%);
+        }
     }
 
     .landing-card {

@@ -1,5 +1,5 @@
 <script>
-    import { t } from "../i18n";
+    import { locale, t } from "../i18n";
     /** @type {{ id: string; nickname: string; avatar: string; rating?: number | null } | null} */
     export let user = null;
     /** @type {Array<any>} */
@@ -75,6 +75,123 @@
     $: engineModeHelp = $t("hub.form.engineModeHelp");
     $: timeMinutesSuffix = $t("play.clock.minutesSuffix");
     $: timeSecondsSuffix = $t("play.clock.secondsSuffix");
+    $: archiveHeading = $t("hub.groups.archive");
+    $: ongoingHeading = $t("hub.groups.ongoing");
+    $: undatedGroupLabel = $t("hub.groups.undated");
+    $: expandGroupLabel = $t("hub.groups.expand");
+    $: collapseGroupLabel = $t("hub.groups.collapse");
+
+    $: currentLocale = $locale;
+
+    const parseTimestamp = (value) => {
+        if (!value) {
+            return null;
+        }
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? null : date;
+    };
+
+    const formatArchiveLabel = (date) => {
+        if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+            return undatedGroupLabel;
+        }
+        try {
+            return new Intl.DateTimeFormat(currentLocale || undefined, {
+                month: "long",
+                year: "numeric",
+            }).format(date);
+        } catch (_error) {
+            return new Intl.DateTimeFormat(undefined, {
+                month: "long",
+                year: "numeric",
+            }).format(date);
+        }
+    };
+
+    const sortByDateDesc = (a, b) => {
+        if (!a && !b) {
+            return 0;
+        }
+        if (!a) {
+            return 1;
+        }
+        if (!b) {
+            return -1;
+        }
+        return b.getTime() - a.getTime();
+    };
+
+    const sanitizeId = (value) => String(value ?? "").replace(/[^a-zA-Z0-9_-]+/g, "-");
+
+    const archivePanelId = (key) => `archive-${sanitizeId(key)}`;
+    const opponentPanelId = (groupKey, opponentKey) =>
+        `archive-${sanitizeId(groupKey)}-opponent-${sanitizeId(opponentKey)}`;
+
+    let collapsedArchiveGroups = {};
+    let collapsedOpponentGroups = {};
+
+    const archiveGroupCollapsed = (key) => Boolean(collapsedArchiveGroups[key]);
+    const opponentGroupCollapsed = (groupKey, opponentKey) =>
+        Boolean(collapsedOpponentGroups[`${groupKey}::${opponentKey}`]);
+
+    const toggleArchiveGroup = (key) => {
+        collapsedArchiveGroups = {
+            ...collapsedArchiveGroups,
+            [key]: !collapsedArchiveGroups[key],
+        };
+    };
+
+    const toggleOpponentGroup = (groupKey, opponentKey) => {
+        const compound = `${groupKey}::${opponentKey}`;
+        collapsedOpponentGroups = {
+            ...collapsedOpponentGroups,
+            [compound]: !collapsedOpponentGroups[compound],
+        };
+    };
+
+    $: {
+        const archiveKeys = new Set(archivedGroups.map((group) => group.key));
+        let archiveChanged = false;
+        const nextArchiveState = { ...collapsedArchiveGroups };
+        archiveKeys.forEach((key) => {
+            if (!(key in nextArchiveState)) {
+                nextArchiveState[key] = false;
+                archiveChanged = true;
+            }
+        });
+        Object.keys(nextArchiveState).forEach((key) => {
+            if (!archiveKeys.has(key)) {
+                delete nextArchiveState[key];
+                archiveChanged = true;
+            }
+        });
+        if (archiveChanged) {
+            collapsedArchiveGroups = nextArchiveState;
+        }
+
+        const opponentKeys = new Set(
+            archivedGroups.flatMap((group) =>
+                group.opponents.map((opponent) => `${group.key}::${opponent.key}`),
+            ),
+        );
+        let opponentChanged = false;
+        const nextOpponentState = { ...collapsedOpponentGroups };
+        opponentKeys.forEach((compound) => {
+            if (!(compound in nextOpponentState)) {
+                nextOpponentState[compound] = false;
+                opponentChanged = true;
+            }
+        });
+        Object.keys(nextOpponentState).forEach((compound) => {
+            if (!opponentKeys.has(compound)) {
+                delete nextOpponentState[compound];
+                opponentChanged = true;
+            }
+        });
+        if (opponentChanged) {
+            collapsedOpponentGroups = nextOpponentState;
+        }
+    }
 
     const ENGINE_MODE_DEPTH = "depth";
     const ENGINE_MODE_TIME = "time";
@@ -122,7 +239,99 @@
         return ratingValueLabel.replace("{value}", display);
     };
 
+    const toRenderGame = (game) => {
+        const opponent = game?.opponent ?? null;
+        const opponentLabel = opponentNameDisplay(opponent);
+        const opponentRating = ratingDisplay(opponent?.rating);
+        return {
+            id: game.id,
+            opponentLabel,
+            opponentAvatar: opponent?.avatar ?? "",
+            opponentIsEngine: Boolean(opponent?.isEngine),
+            opponentRating,
+            opponentRatingLabel: ratingValueText(opponent?.rating),
+            summary: summaryText(game),
+            status: gameStatusLabel(game),
+            timestamp: formatTime(game.lastUpdated),
+        };
+    };
+
     $: userRatingValue = ratingDisplay(user?.rating);
+
+    const opponentKey = (game) => {
+        const rawId = game?.opponent?.id;
+        if (rawId !== null && rawId !== undefined) {
+            return `id-${rawId}`;
+        }
+        const label = opponentNameDisplay(game?.opponent ?? null);
+        return `name-${label.toLowerCase()}`;
+    };
+
+    $: activeGames = games
+        .filter((game) => !isFinished(game))
+        .map((game) => toRenderGame(game));
+    $: archivedGroups = (() => {
+        const finished = games.filter(isFinished);
+        if (!finished.length) {
+            return [];
+        }
+        const buckets = new Map();
+        finished.forEach((game) => {
+            const timestamp = parseTimestamp(game.lastUpdated ?? game.startedAt ?? null);
+            const key = timestamp
+                ? `${timestamp.getFullYear()}-${String(timestamp.getMonth() + 1).padStart(2, "0")}`
+                : "undated";
+            if (!buckets.has(key)) {
+                buckets.set(key, {
+                    date: timestamp,
+                    opponents: new Map(),
+                });
+            }
+            const entry = buckets.get(key);
+            if (timestamp && (!entry.date || timestamp > entry.date)) {
+                entry.date = timestamp;
+            }
+            const opponentId = opponentKey(game);
+            if (!entry.opponents.has(opponentId)) {
+                entry.opponents.set(opponentId, {
+                    label: opponentNameDisplay(game.opponent ?? null),
+                    games: [],
+                });
+            }
+            entry.opponents.get(opponentId).games.push(game);
+        });
+        return Array.from(buckets.entries())
+            .map(([key, value]) => {
+                const opponentGroups = Array.from(value.opponents.entries())
+                    .map(([opponentKeyValue, opponentValue]) => {
+                        const sortedGames = opponentValue.games.slice().sort((a, b) => {
+                            const aDate = parseTimestamp(a.lastUpdated ?? a.startedAt ?? null);
+                            const bDate = parseTimestamp(b.lastUpdated ?? b.startedAt ?? null);
+                            return sortByDateDesc(aDate, bDate);
+                        });
+                        const renderGames = sortedGames.map((game) => toRenderGame(game));
+                        return {
+                            key: opponentKeyValue,
+                            label: opponentValue.label,
+                            games: renderGames,
+                        };
+                    })
+                    .sort((a, b) => a.label.localeCompare(b.label, currentLocale || undefined, {
+                        sensitivity: "base",
+                    }));
+                const totalGames = opponentGroups.reduce((total, group) => total + group.games.length, 0);
+                return {
+                    key,
+                    date: value.date,
+                    label: value.date ? formatArchiveLabel(value.date) : undatedGroupLabel,
+                    opponents: opponentGroups,
+                    total: totalGames,
+                };
+            })
+            .sort((a, b) => sortByDateDesc(a.date, b.date));
+    })();
+
+    $: archivedTotal = archivedGroups.reduce((total, group) => total + group.total, 0);
 
     $: selectedOpponent = availableOpponents.find(
         (opponent) => String(opponent.id) === String(newGameOpponentId),
@@ -402,50 +611,197 @@
         {/if}
 
         {#if games.length}
-            <div class="game-list">
-                {#each games as game (game.id)}
-                    <button
-                        type="button"
-                        class="game-card"
-                        class:active={game.id === selectedGameId}
-                        on:click={() => onOpenGame(game.id)}
-                        aria-pressed={game.id === selectedGameId}
-                    >
-                        <div class="game-opponent">
-                            <img
-                                src={game.opponent.avatar}
-                                alt={$t("avatar.label", {
-                                    name: opponentNameDisplay(game.opponent),
-                                })}
-                            />
-                            <div>
-                                <p class="name">
-                                    {opponentNameDisplay(game.opponent)}
-                                    {#if game.opponent?.isEngine}
-                                        <span class="engine-badge">
-                                            {engineBadge}
-                                        </span>
-                                    {/if}
-                                    {#if ratingDisplay(game.opponent?.rating) !== null}
-                                        <span
-                                            class="rating-badge"
-                                            title={ratingValueText(game.opponent?.rating)}
-                                        >
-                                            {ratingDisplay(game.opponent?.rating)}
-                                        </span>
-                                    {/if}
-                                </p>
-                                <p class="meta">{summaryText(game)}</p>
-                            </div>
+            <div class="game-sections">
+                {#if activeGames.length}
+                    <section class="game-section current">
+                        <header class="game-section-header">
+                            <h3>{ongoingHeading}</h3>
+                            <span class="game-count" aria-hidden="true">{activeGames.length}</span>
+                        </header>
+                        <div class="game-list">
+                            {#each activeGames as game (game.id)}
+                                <button
+                                    type="button"
+                                    class="game-card"
+                                    class:active={game.id === selectedGameId}
+                                    on:click={() => onOpenGame(game.id)}
+                                    aria-pressed={game.id === selectedGameId}
+                                >
+                                    <div class="game-opponent">
+                                        <img
+                                            src={game.opponentAvatar}
+                                            alt={$t("avatar.label", {
+                                                name: game.opponentLabel,
+                                            })}
+                                        />
+                                        <div>
+                                            <p class="name">
+                                                {game.opponentLabel}
+                                                {#if game.opponentIsEngine}
+                                                    <span class="engine-badge">
+                                                        {engineBadge}
+                                                    </span>
+                                                {/if}
+                                                {#if game.opponentRating !== null}
+                                                    <span
+                                                        class="rating-badge"
+                                                        title={game.opponentRatingLabel}
+                                                    >
+                                                        {game.opponentRating}
+                                                    </span>
+                                                {/if}
+                                            </p>
+                                            <p class="meta">{game.summary}</p>
+                                        </div>
+                                    </div>
+                                    <div class="game-info">
+                                        <span class="status">{game.status}</span>
+                                        <span class="timestamp">{game.timestamp}</span>
+                                    </div>
+                                </button>
+                            {/each}
                         </div>
-                        <div class="game-info">
-                            <span class="status">{gameStatusLabel(game)}</span>
-                            <span class="timestamp">
-                                {formatTime(game.lastUpdated)}
-                            </span>
+                    </section>
+                {/if}
+
+                {#if archivedGroups.length}
+                    <section class="game-section archive">
+                        <header class="game-section-header">
+                            <h3>{archiveHeading}</h3>
+                            <span class="game-count" aria-hidden="true">{archivedTotal}</span>
+                        </header>
+                        <div class="archive-groups">
+                            {#each archivedGroups as group (group.key)}
+                                {@const archiveId = archivePanelId(group.key)}
+                                <div class="game-group" data-collapsed={archiveGroupCollapsed(group.key)}>
+                                    <div class="game-group-header">
+                                        <div class="group-title">
+                                            <h4>{group.label}</h4>
+                                        </div>
+                                        <div class="group-controls">
+                                            <span class="game-group-count" aria-hidden="true">{group.total}</span>
+                                            <button
+                                                type="button"
+                                                class="collapse-toggle"
+                                                on:click={() => toggleArchiveGroup(group.key)}
+                                                aria-expanded={!archiveGroupCollapsed(group.key)}
+                                                aria-controls={archiveId}
+                                                aria-label={archiveGroupCollapsed(group.key)
+                                                    ? expandGroupLabel
+                                                    : collapseGroupLabel}
+                                            >
+                                                <span aria-hidden="true">
+                                                    {archiveGroupCollapsed(group.key) ? "+" : "-"}
+                                                </span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="opponent-groups"
+                                        id={archiveId}
+                                        class:is-collapsed={archiveGroupCollapsed(group.key)}
+                                        aria-hidden={archiveGroupCollapsed(group.key)}
+                                    >
+                                        {#each group.opponents as opponentGroup (opponentGroup.key)}
+                                            {@const opponentId = opponentPanelId(group.key, opponentGroup.key)}
+                                            <div
+                                                class="opponent-group"
+                                                data-collapsed={opponentGroupCollapsed(group.key, opponentGroup.key)}
+                                            >
+                                                <div class="opponent-header">
+                                                    <span class="opponent-name">{opponentGroup.label}</span>
+                                                    <div class="opponent-controls">
+                                                        <span class="opponent-count" aria-hidden="true">
+                                                            {opponentGroup.games.length}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            class="collapse-toggle small"
+                                                            on:click={() =>
+                                                                toggleOpponentGroup(group.key, opponentGroup.key)
+                                                            }
+                                                            aria-expanded={!opponentGroupCollapsed(
+                                                                group.key,
+                                                                opponentGroup.key,
+                                                            )}
+                                                            aria-controls={opponentId}
+                                                            aria-label={opponentGroupCollapsed(
+                                                                group.key,
+                                                                opponentGroup.key,
+                                                            )
+                                                                ? expandGroupLabel
+                                                                : collapseGroupLabel}
+                                                        >
+                                                            <span aria-hidden="true">
+                                                                {opponentGroupCollapsed(group.key, opponentGroup.key)
+                                                                    ? "+"
+                                                                    : "-"}
+                                                            </span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div
+                                                    class="game-list compact"
+                                                    id={opponentId}
+                                                    class:is-collapsed={opponentGroupCollapsed(
+                                                        group.key,
+                                                        opponentGroup.key,
+                                                    )}
+                                                    aria-hidden={opponentGroupCollapsed(
+                                                        group.key,
+                                                        opponentGroup.key,
+                                                    )}
+                                                >
+                                                    {#each opponentGroup.games as game (game.id)}
+                                                        <button
+                                                            type="button"
+                                                            class="game-card"
+                                                            class:active={game.id === selectedGameId}
+                                                            on:click={() => onOpenGame(game.id)}
+                                                            aria-pressed={game.id === selectedGameId}
+                                                        >
+                                                            <div class="game-opponent">
+                                                                <img
+                                                                    src={game.opponentAvatar}
+                                                                    alt={$t("avatar.label", {
+                                                                        name: game.opponentLabel,
+                                                                    })}
+                                                                />
+                                                                <div>
+                                                                    <p class="name">
+                                                                        {game.opponentLabel}
+                                                                        {#if game.opponentIsEngine}
+                                                                            <span class="engine-badge">
+                                                                                {engineBadge}
+                                                                            </span>
+                                                                        {/if}
+                                                                        {#if game.opponentRating !== null}
+                                                                            <span
+                                                                                class="rating-badge"
+                                                                                title={game.opponentRatingLabel}
+                                                                            >
+                                                                                {game.opponentRating}
+                                                                            </span>
+                                                                        {/if}
+                                                                    </p>
+                                                                    <p class="meta">{game.summary}</p>
+                                                                </div>
+                                                            </div>
+                                                            <div class="game-info">
+                                                                <span class="status">{game.status}</span>
+                                                                <span class="timestamp">{game.timestamp}</span>
+                                                            </div>
+                                                        </button>
+                                                    {/each}
+                                                </div>
+                                            </div>
+                                        {/each}
+                                    </div>
+                                </div>
+                            {/each}
                         </div>
-                    </button>
-                {/each}
+                    </section>
+                {/if}
             </div>
         {:else}
             <p class="empty">{emptyLabel}</p>
@@ -456,7 +812,7 @@
 <style>
     .hub {
         width: 100%;
-        max-width: 880px;
+        max-width: 1040px;
         display: flex;
         flex-direction: column;
         gap: 1.5rem;
@@ -466,8 +822,8 @@
 
     @media (min-width: 1200px) {
         .hub {
-            max-width: 1020px;
-            padding-inline: 2rem;
+            max-width: 1280px;
+            padding-inline: 2.5rem;
         }
     }
 
@@ -825,10 +1181,173 @@
         color: rgba(148, 163, 184, 0.65);
     }
 
+    .game-sections {
+        display: grid;
+        gap: 1.5rem;
+    }
+
+    .game-section {
+        display: grid;
+        gap: 0.9rem;
+    }
+
+    .is-collapsed {
+        display: none !important;
+    }
+
+    .game-section-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.6rem;
+    }
+
+    .game-section-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        color: #f8fafc;
+    }
+
+    .game-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2.25rem;
+        padding: 0.2rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(37, 99, 235, 0.18);
+        color: #bfdbfe;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+    }
+
+    .archive-groups {
+        display: grid;
+        gap: 1.1rem;
+    }
+
+    .game-group {
+        display: grid;
+        gap: 0.75rem;
+        padding: 0.75rem 0.9rem;
+        border-radius: 1rem;
+        background: rgba(15, 23, 42, 0.35);
+        border: 1px solid rgba(96, 165, 250, 0.12);
+    }
+
+    .group-title {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+    }
+
+    .group-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .opponent-groups {
+        display: grid;
+        gap: 0.9rem;
+    }
+
+    .opponent-group {
+        display: grid;
+        gap: 0.55rem;
+        padding: 0.55rem 0.65rem;
+        border-radius: 0.85rem;
+        background: rgba(15, 23, 42, 0.25);
+        border: 1px solid rgba(148, 163, 184, 0.12);
+    }
+
+    .opponent-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.5rem;
+    }
+
+    .opponent-name {
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: rgba(226, 232, 240, 0.88);
+    }
+
+    .opponent-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+    }
+
+    .opponent-count {
+        font-size: 0.75rem;
+        color: rgba(148, 163, 184, 0.7);
+        font-weight: 600;
+    }
+
+    .collapse-toggle {
+        border: none;
+        background: rgba(37, 99, 235, 0.18);
+        color: #bfdbfe;
+        width: 1.75rem;
+        height: 1.75rem;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+    }
+
+    .collapse-toggle.small {
+        width: 1.5rem;
+        height: 1.5rem;
+        font-size: 0.9rem;
+    }
+
+    .collapse-toggle:hover {
+        background: rgba(59, 130, 246, 0.32);
+        color: #e0f2fe;
+        transform: translateY(-1px);
+    }
+
+    .collapse-toggle:focus-visible {
+        outline: 2px solid rgba(191, 219, 254, 0.9);
+        outline-offset: 2px;
+    }
+
+    .game-group-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.6rem;
+    }
+
+    .game-group-header h4 {
+        margin: 0;
+        color: rgba(226, 232, 240, 0.88);
+        font-size: 0.95rem;
+        font-weight: 600;
+    }
+
+    .game-group-count {
+        color: rgba(148, 163, 184, 0.75);
+        font-size: 0.78rem;
+        font-weight: 600;
+    }
+
     .game-list {
         display: flex;
         flex-direction: column;
         gap: 0.85rem;
+    }
+
+    .game-list.compact {
+        gap: 0.65rem;
     }
 
     .game-card {

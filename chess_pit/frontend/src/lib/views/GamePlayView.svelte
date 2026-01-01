@@ -721,7 +721,11 @@
                                 class:critical={whiteClockCritical}
                             >
                                 <span class="clock-label">{clockWhiteLabel}</span>
-                                <span class="clock-value">{whiteClockDisplay}</span>
+                                <span class="clock-value">{whiteClockDisplay}
+                                    {#if clockIncrementSeconds}
+                                        <small class="clock-increment">+{clockIncrementSeconds}s</small>
+                                    {/if}
+                                </span>
                             </div>
                             <div
                                 class="clock-row"
@@ -729,7 +733,11 @@
                                 class:critical={blackClockCritical}
                             >
                                 <span class="clock-label">{clockBlackLabel}</span>
-                                <span class="clock-value">{blackClockDisplay}</span>
+                                <span class="clock-value">{blackClockDisplay}
+                                    {#if clockIncrementSeconds}
+                                        <small class="clock-increment">+{clockIncrementSeconds}s</small>
+                                    {/if}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -884,10 +892,10 @@
         display: flex;
         flex-direction: column;
         gap: clamp(1rem, 3vw, 1.5rem);
-        padding: clamp(0.75rem, 3vw, 1.25rem) clamp(1rem, 2.5vw + 1rem, 2.5rem)
-            2.5rem;
+        padding: clamp(0.75rem, 3vw, 1.35rem) clamp(1.25rem, 2.5vw + 1.5rem, 3rem)
+            2.75rem;
         width: 100%;
-        max-width: 1280px;
+        max-width: 1440px;
         margin-inline: auto;
     }
 
@@ -1052,7 +1060,19 @@
     .clock-value {
         font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
             "Liberation Mono", "Courier New", monospace;
-        font-size: 1.1rem;
+        font-size: 1.25rem;
+        display: flex;
+        align-items: baseline;
+        gap: 0.5rem;
+    }
+
+    .clock-increment {
+        font-size: 0.7rem;
+        background: rgba(15, 23, 42, 0.25);
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        padding: 0.1rem 0.35rem;
+        border-radius: 999px;
+        color: rgba(226, 232, 240, 0.82);
     }
 
     .board-section :global(.chess-widget) {
@@ -1253,8 +1273,8 @@
 
     @media (min-width: 960px) {
         .play-body {
-            grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.1fr);
-            column-gap: clamp(1.1rem, 3vw, 1.8rem);
+            grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+            column-gap: clamp(1.4rem, 3.5vw, 2.4rem);
         }
 
         .game-info {

@@ -724,9 +724,7 @@
     if (game.turn === game.yourColor) {
       return tr("game.status.yourMove");
     }
-    return tr("game.status.opponentMove", {
-      name: game.opponent.nickname,
-    });
+    return tr("game.status.opponentMove");
   };
 
   async function performLogin(credentials) {

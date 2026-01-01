@@ -11,6 +11,7 @@
     import ChessBoard from "../ChessBoard.svelte";
     import GameAnalysisViewer from "../GameAnalysisViewer.svelte";
     import { evaluationToWdl, toPercentage } from "../utils/evaluation";
+    import { createClockStore, formatClock as formatClockDisplay } from "../stores/clocks";
 
     /** @type {any} */
     export let game = null;
@@ -33,6 +34,38 @@
     let analysisFocusIndex = null;
 
     const analysisMissingValue = "-";
+    const clock = createClockStore();
+
+    const isCriticalClock = (value) =>
+        typeof value === "number" && Number.isFinite(value) && value <= 10;
+
+    const formatTimeControlLabel = (initialSeconds, incrementSeconds) => {
+        if (initialSeconds === null || initialSeconds === undefined) {
+            return $t("play.clock.unlimited");
+        }
+        const minutes = Math.floor(initialSeconds / 60);
+        const seconds = initialSeconds % 60;
+        const pieces = [];
+        if (minutes > 0) {
+            pieces.push(`${minutes}${$t("play.clock.minutesSuffix")}`);
+        }
+        if (seconds > 0 || pieces.length === 0) {
+            pieces.push(`${seconds}${$t("play.clock.secondsSuffix")}`);
+        }
+        if (
+            typeof incrementSeconds === "number" &&
+            Number.isFinite(incrementSeconds) &&
+            incrementSeconds > 0
+        ) {
+            pieces.push(
+                $t("play.clock.increment", {
+                    value: incrementSeconds,
+                    unit: $t("play.clock.secondsSuffix"),
+                }),
+            );
+        }
+        return pieces.join(" ");
+    };
 
     const normalizeSanString = (value) =>
         typeof value === "string" ? value.replace(/[+#?!]/g, "").trim() : "";
@@ -234,6 +267,10 @@
     $: summaryHeading = $t("play.info.summary");
     $: resultHeading = $t("play.info.result");
     $: pgnHeading = $t("play.info.pgn");
+    $: clockHeading = $t("play.clock.heading");
+    $: clockControlLabel = $t("play.clock.label");
+    $: clockWhiteLabel = $t("color.white");
+    $: clockBlackLabel = $t("color.black");
     $: emptyText = $t("play.placeholder");
     $: opponentAlt = $t("avatar.label", { name: opponentName });
     $: analysisHeading = $t("analysis.heading");
@@ -385,6 +422,49 @@
         label: entry.title,
         ply: idx + 1,
     }));
+    $: clockInitialSeconds =
+        typeof game?.timeControlInitialSeconds === "number" &&
+        Number.isFinite(game.timeControlInitialSeconds)
+            ? game.timeControlInitialSeconds
+            : null;
+    $: clockIncrementSeconds =
+        typeof game?.timeControlIncrementSeconds === "number" &&
+        Number.isFinite(game.timeControlIncrementSeconds)
+            ? game.timeControlIncrementSeconds
+            : null;
+    $: clockSectionVisible = clockInitialSeconds !== null;
+    $: clockSummaryLabel = clockSectionVisible
+        ? formatTimeControlLabel(clockInitialSeconds, clockIncrementSeconds)
+        : "";
+    $: clockIsActive = Boolean(
+        clockSectionVisible &&
+            (game?.status === "active" || game?.status === "pending") &&
+            game?.turnStartTime,
+    );
+    $: if (game) {
+        const fallback = clockSectionVisible ? clockInitialSeconds : null;
+        clock.updateFromServer({
+            whiteRemaining:
+                typeof game.whiteTimeRemainingSeconds === "number" &&
+                Number.isFinite(game.whiteTimeRemainingSeconds)
+                    ? game.whiteTimeRemainingSeconds
+                    : fallback,
+            blackRemaining:
+                typeof game.blackTimeRemainingSeconds === "number" &&
+                Number.isFinite(game.blackTimeRemainingSeconds)
+                    ? game.blackTimeRemainingSeconds
+                    : fallback,
+            turnStartTime: game.turnStartTime ?? null,
+            active: clockSectionVisible && clockIsActive,
+            activeColor: game.turn ?? "white",
+        });
+    }
+    $: whiteClockDisplay = formatClockDisplay($clock.whiteRemaining);
+    $: blackClockDisplay = formatClockDisplay($clock.blackRemaining);
+    $: whiteClockActive = Boolean($clock.running && $clock.activeColor === "white");
+    $: blackClockActive = Boolean($clock.running && $clock.activeColor === "black");
+    $: whiteClockCritical = isCriticalClock($clock.whiteRemaining);
+    $: blackClockCritical = isCriticalClock($clock.blackRemaining);
     $: analysisViewerStepCount = analysisViewerSteps.length;
     $: {
         const total = analysisViewerStepCount;
@@ -624,6 +704,36 @@
 
         <div class="play-body">
             <section class="board-section">
+                {#if clockSectionVisible}
+                    <div class="clock-panel" aria-label={clockHeading}>
+                        <div class="clock-header">
+                            <h2>{clockHeading}</h2>
+                            {#if clockSummaryLabel}
+                                <span class="clock-summary">
+                                    {clockControlLabel}: {clockSummaryLabel}
+                                </span>
+                            {/if}
+                        </div>
+                        <div class="clock-rows">
+                            <div
+                                class="clock-row"
+                                class:active={whiteClockActive}
+                                class:critical={whiteClockCritical}
+                            >
+                                <span class="clock-label">{clockWhiteLabel}</span>
+                                <span class="clock-value">{whiteClockDisplay}</span>
+                            </div>
+                            <div
+                                class="clock-row"
+                                class:active={blackClockActive}
+                                class:critical={blackClockCritical}
+                            >
+                                <span class="clock-label">{clockBlackLabel}</span>
+                                <span class="clock-value">{blackClockDisplay}</span>
+                            </div>
+                        </div>
+                    </div>
+                {/if}
                 <ChessBoard
                     bind:this={boardRef}
                     startingFen={game.initialFen}
@@ -874,6 +984,75 @@
         flex-direction: column;
         align-items: center;
         gap: 0.75rem;
+    }
+
+    .clock-panel {
+        width: 100%;
+        display: grid;
+        gap: 0.6rem;
+        padding: 0.9rem 1rem;
+        border-radius: 16px;
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid rgba(96, 165, 250, 0.15);
+    }
+
+    .clock-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .clock-header h2 {
+        margin: 0;
+        font-size: 1rem;
+        color: #f8fafc;
+    }
+
+    .clock-summary {
+        font-size: 0.85rem;
+        color: rgba(148, 163, 184, 0.85);
+    }
+
+    .clock-rows {
+        display: grid;
+        gap: 0.45rem;
+    }
+
+    .clock-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.45rem 0.65rem;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.45);
+        border: 1px solid transparent;
+        color: #e2e8f0;
+        transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+    }
+
+    .clock-row.active {
+        border-color: rgba(96, 165, 250, 0.55);
+        background: rgba(30, 64, 175, 0.35);
+        color: #f8fafc;
+    }
+
+    .clock-row.critical {
+        border-color: rgba(251, 191, 36, 0.6);
+        background: rgba(251, 146, 60, 0.25);
+        color: #fffbeb;
+    }
+
+    .clock-label {
+        font-size: 0.95rem;
+        font-weight: 600;
+    }
+
+    .clock-value {
+        font-family: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+            "Liberation Mono", "Courier New", monospace;
+        font-size: 1.1rem;
     }
 
     .board-section :global(.chess-widget) {

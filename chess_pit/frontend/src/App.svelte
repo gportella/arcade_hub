@@ -1,5 +1,6 @@
 <script>
   import { onDestroy, onMount } from "svelte";
+  import { get } from "svelte/store";
   import LandingView from "./lib/views/LandingView.svelte";
   import GameHubView from "./lib/views/GameHubView.svelte";
   import GamePlayView from "./lib/views/GamePlayView.svelte";
@@ -12,6 +13,8 @@
     createGame,
     submitMove,
     requestEngineMove,
+    analyzeGame,
+    analyzeGameSequence,
     updateUser,
     resignGame,
     connectToGame,
@@ -22,6 +25,12 @@
     clearStoredToken,
   } from "./lib/sessionStorage";
   import { normalizeFen } from "./lib/fen";
+  import {
+    detectInitialLocale,
+    locale as localeStore,
+    setLocale,
+    t,
+  } from "./lib/i18n";
 
   const VIEW = Object.freeze({
     LANDING: "landing",
@@ -116,6 +125,14 @@
   const SHOWCASE_FEN =
     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+  const HUB_POLL_INTERVAL = 15000;
+  const MAX_INITIAL_MINUTES = 1440;
+  const MAX_INCREMENT_SECONDS = 600;
+  const ENGINE_MODE_DEPTH = "depth";
+  const ENGINE_MODE_TIME = "time";
+  const DEFAULT_TIME_MINUTES = 10;
+  const DEFAULT_INCREMENT_SECONDS = 5;
+
   /** @type {"landing" | "games" | "play" | "profile"} */
   let currentView = VIEW.LANDING;
   let isAuthenticated = false;
@@ -130,7 +147,13 @@
   let showNewGameForm = false;
   let newGameOpponentId = "";
   let newGameColor = "white";
+  let newGameDepth = "";
+  let newGameInitialMinutes = "";
+  let newGameIncrementSeconds = "";
+  let newGameEngineMode = ENGINE_MODE_TIME;
   let availableOpponents = [];
+  let availableEngines = [];
+  let lastDepthOpponentId = null;
   let profileDraft = { avatarUrl: "", password: "" };
   let landingError = "";
   let isLandingLoading = false;
@@ -140,11 +163,242 @@
   let hubUser = null;
   let hubPollTimer = null;
   let engineMovePending = false;
-  const HUB_POLL_INTERVAL = 15000;
+  let analysisResult = null;
+  let analysisError = "";
+  let isAnalysisLoading = false;
+  let analysisFetchedAt = null;
+  let analysisEngineSpec = null;
+  let analysisSteps = [];
+
+  function resetAnalysis() {
+    analysisResult = null;
+    analysisError = "";
+    isAnalysisLoading = false;
+    analysisFetchedAt = null;
+    analysisSteps = [];
+  }
+
+  function resolveTimeUnit(localeCode, unit, count) {
+    const locale = localeCode === "ca" ? "ca" : "en";
+    if (unit === "minute") {
+      if (locale === "ca") {
+        return count === 1 ? "minut" : "minuts";
+      }
+      return "min";
+    }
+    if (unit === "hour") {
+      if (locale === "ca") {
+        return count === 1 ? "hora" : "hores";
+      }
+      return count === 1 ? "hr" : "hrs";
+    }
+    if (unit === "day") {
+      if (locale === "ca") {
+        return count === 1 ? "dia" : "dies";
+      }
+      return count === 1 ? "day" : "days";
+    }
+    return "";
+  }
+
+  function resolveDateLocale(localeCode) {
+    if (localeCode === "ca") {
+      return "ca-ES";
+    }
+    return "en-US";
+  }
+
+  const tr = (key, params) => {
+    const translator = get(t);
+    return translator(key, params);
+  };
 
   function fallbackAvatar(username = "player") {
     const slug = encodeURIComponent(username || "player");
     return `https://avatar.vercel.sh/${slug}`;
+  }
+
+  function findOpponentById(opponentId) {
+    if (opponentId === null || opponentId === undefined) {
+      return null;
+    }
+    const numericId = Number(opponentId);
+    return availableOpponents.find((entry) => entry.id === numericId) ?? null;
+  }
+
+  function findEngineSpec(engineKey, specs = availableEngines) {
+    if (!engineKey) {
+      return null;
+    }
+    if (!Array.isArray(specs) || !specs.length) {
+      return null;
+    }
+    return specs.find((engine) => engine.key === engineKey) ?? null;
+  }
+
+  function defaultDepthForEngine(engineKey, specs = availableEngines) {
+    const spec = findEngineSpec(engineKey, specs);
+    const depth = spec?.default_depth;
+    const limit =
+      typeof spec?.max_depth === "number" && Number.isFinite(spec.max_depth)
+        ? spec.max_depth
+        : 64;
+    if (typeof depth === "number" && Number.isFinite(depth)) {
+      return Math.max(1, Math.min(limit, Math.round(depth)));
+    }
+    return null;
+  }
+
+  function normalizeEngineDepth(depth, engineKey, specs = availableEngines) {
+    if (depth === null || depth === undefined || depth === "") {
+      return null;
+    }
+    const spec = findEngineSpec(engineKey, specs);
+    const limit =
+      typeof spec?.max_depth === "number" && Number.isFinite(spec.max_depth)
+        ? spec.max_depth
+        : 64;
+    return clampDepthValue(depth, limit);
+  }
+
+  function sanitizeDepthInput(value) {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    const text = String(value).trim();
+    if (!text) {
+      return "";
+    }
+    if (!/^[0-9]+$/.test(text)) {
+      const digits = text.replace(/[^0-9]/g, "");
+      return digits;
+    }
+    return text;
+  }
+
+  function clampDepthValue(value, limit = 64) {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+    const numeric = Number.parseInt(String(value).trim(), 10);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    const limitNumber = Number(limit);
+    const upperBound = Number.isFinite(limitNumber)
+      ? Math.max(1, Math.min(64, Math.round(limitNumber)))
+      : 64;
+    return Math.max(1, Math.min(upperBound, Math.round(numeric)));
+  }
+
+  function sanitizeNumericInput(value) {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    const text = String(value).trim();
+    if (!text) {
+      return "";
+    }
+    if (!/^[0-9]+$/.test(text)) {
+      return text.replace(/[^0-9]/g, "");
+    }
+    return text;
+  }
+
+  function clampIntegerValue(value, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+    const numeric = Number.parseInt(String(value).trim(), 10);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return Math.max(min, Math.min(max, numeric));
+  }
+
+  function normalizeInitialSeconds(value) {
+    const sanitized = sanitizeNumericInput(value);
+    if (!sanitized) {
+      return null;
+    }
+    const clamped = clampIntegerValue(sanitized, {
+      min: 0,
+      max: MAX_INITIAL_MINUTES,
+    });
+    if (clamped === null) {
+      return null;
+    }
+    return clamped * 60;
+  }
+
+  function normalizeIncrementSeconds(value) {
+    const sanitized = sanitizeNumericInput(value);
+    if (!sanitized) {
+      return null;
+    }
+    return clampIntegerValue(sanitized, {
+      min: 0,
+      max: MAX_INCREMENT_SECONDS,
+    });
+  }
+
+  function ensureTimeDefaults() {
+    if (!newGameInitialMinutes) {
+      newGameInitialMinutes = String(DEFAULT_TIME_MINUTES);
+    }
+    if (!newGameIncrementSeconds) {
+      newGameIncrementSeconds = String(DEFAULT_INCREMENT_SECONDS);
+    }
+  }
+
+  function syncOpponentPreferences(opponentId, { forceReset = false } = {}) {
+    const opponent = findOpponentById(opponentId);
+    if (!opponent) {
+      newGameEngineMode = ENGINE_MODE_TIME;
+      ensureTimeDefaults();
+      newGameDepth = "";
+      return;
+    }
+    if (opponent.isEngine) {
+      if (
+        forceReset ||
+        (newGameEngineMode !== ENGINE_MODE_DEPTH && newGameEngineMode !== ENGINE_MODE_TIME)
+      ) {
+        newGameEngineMode = ENGINE_MODE_DEPTH;
+      }
+      if (newGameEngineMode === ENGINE_MODE_DEPTH) {
+        syncNewGameDepth(opponentId, { forceReset });
+        newGameInitialMinutes = "";
+        newGameIncrementSeconds = "";
+      } else {
+        ensureTimeDefaults();
+        newGameDepth = "";
+      }
+      return;
+    }
+    newGameEngineMode = ENGINE_MODE_TIME;
+    ensureTimeDefaults();
+    newGameDepth = "";
+  }
+
+  function syncNewGameDepth(opponentId, { forceReset = false } = {}) {
+    const opponent = findOpponentById(opponentId);
+    if (!opponent || !opponent.isEngine) {
+      newGameDepth = "";
+      lastDepthOpponentId = opponent ? opponent.id : null;
+      return;
+    }
+    if (newGameEngineMode !== ENGINE_MODE_DEPTH) {
+      newGameDepth = "";
+      lastDepthOpponentId = opponent.id;
+      return;
+    }
+    const shouldReset = forceReset || lastDepthOpponentId !== opponent.id || !newGameDepth;
+    if (shouldReset) {
+      const defaultDepth = defaultDepthForEngine(opponent.engineKey);
+      newGameDepth = defaultDepth !== null ? String(defaultDepth) : "";
+    }
+    lastDepthOpponentId = opponent.id;
   }
 
   function startHubPolling() {
@@ -170,23 +424,29 @@
     if (!player) {
       return {
         id: 0,
-        nickname: "Unknown",
+        nickname: "",
+        isUnknown: true,
         avatar: fallbackAvatar("unknown"),
-        title: "",
         isEngine: false,
         engineKey: null,
+        rating: null,
       };
     }
-    const nickname = player.display_name || player.username;
+    const nickname = player.display_name || player.username || "";
+    const avatarSource =
+      player.avatar_url ||
+      fallbackAvatar(nickname || player.username || "player");
     return {
       id: player.id,
       nickname,
-      avatar:
-        player.avatar_url ||
-        fallbackAvatar(nickname || player.username || "player"),
-      title: player.is_engine ? "Engine" : "",
+      isUnknown: !nickname,
+      avatar: avatarSource,
       isEngine: Boolean(player.is_engine),
       engineKey: player.engine_key ?? null,
+      rating:
+        typeof player.rating === "number" && Number.isFinite(player.rating)
+          ? Math.round(player.rating)
+          : null,
     };
   }
 
@@ -199,26 +459,33 @@
 
   const formatTime = (iso) => {
     if (!iso) return "";
+    const activeLocale = get(localeStore);
+    const localeCode = activeLocale || "en";
     const target = new Date(iso);
     const diff = Date.now() - target.getTime();
     const minute = 60000;
     const hour = 60 * minute;
     const day = 24 * hour;
 
-    if (diff < minute) return "moments ago";
+    if (diff < minute) {
+      return tr("time.moments");
+    }
     if (diff < hour) {
       const value = Math.round(diff / minute);
-      return `${value} min ago`;
+      const unit = resolveTimeUnit(localeCode, "minute", value);
+      return tr("time.minutes", { count: value, unit });
     }
     if (diff < day) {
       const value = Math.round(diff / hour);
-      return `${value} hr ago`;
+      const unit = resolveTimeUnit(localeCode, "hour", value);
+      return tr("time.hours", { count: value, unit });
     }
     if (diff < 7 * day) {
       const value = Math.round(diff / day);
-      return `${value} day${value === 1 ? "" : "s"} ago`;
+      const unit = resolveTimeUnit(localeCode, "day", value);
+      return tr("time.days", { count: value, unit });
     }
-    return target.toLocaleDateString();
+    return target.toLocaleDateString(resolveDateLocale(localeCode));
   };
 
   const parseActiveColor = (fen) => {
@@ -231,13 +498,36 @@
     const opponent = toOpponent(summary.opponent);
     const fen = summary.current_fen || summary.initial_fen;
     const lastUpdated = summary.last_updated || summary.started_at;
+    const summaryText = summary.summary?.trim() ?? "";
+    const initialSeconds =
+      typeof summary.time_control_initial_seconds === "number" &&
+      Number.isFinite(summary.time_control_initial_seconds)
+        ? summary.time_control_initial_seconds
+        : null;
+    const incrementSeconds =
+      typeof summary.time_control_increment_seconds === "number" &&
+      Number.isFinite(summary.time_control_increment_seconds)
+        ? summary.time_control_increment_seconds
+        : null;
+    const whiteRemaining =
+      typeof summary.white_time_remaining_seconds === "number" &&
+      Number.isFinite(summary.white_time_remaining_seconds)
+        ? summary.white_time_remaining_seconds
+        : null;
+    const blackRemaining =
+      typeof summary.black_time_remaining_seconds === "number" &&
+      Number.isFinite(summary.black_time_remaining_seconds)
+        ? summary.black_time_remaining_seconds
+        : null;
+    const turnStartTime = summary.turn_start_time ?? null;
     return {
       id: summary.id,
       opponent,
       status: summary.status,
       result: summary.result,
       resultDisplay: formatResult(summary.result),
-      summary: summary.summary || "Friendly challenge",
+      summary: summaryText,
+      hasCustomSummary: Boolean(summaryText),
       fen,
       initialFen: summary.initial_fen,
       pgn: summary.pgn,
@@ -247,6 +537,12 @@
       startedAt: summary.started_at,
       movesCount: summary.moves_count,
       currentPositionHash: summary.current_position_hash,
+      engineDepth: normalizeEngineDepth(summary.engine_depth, opponent.engineKey),
+      timeControlInitialSeconds: initialSeconds,
+      timeControlIncrementSeconds: incrementSeconds,
+      whiteTimeRemainingSeconds: whiteRemaining,
+      blackTimeRemainingSeconds: blackRemaining,
+      turnStartTime,
     };
   }
 
@@ -255,19 +551,45 @@
     const summaryRaw = rawSummaryIndex.get(detail.id);
     const fen = detail.current_fen || detail.initial_fen;
     const opponent = summaryUi?.opponent || toOpponent(summaryRaw?.opponent);
+    const engineKey = opponent?.engineKey ?? summaryRaw?.opponent?.engine_key ?? null;
     const yourColor =
       summaryUi?.yourColor ||
       (currentUser && detail.white_player_id === currentUser.id
         ? "white"
         : "black");
     const turn = parseActiveColor(fen);
+    const detailSummary = detail.summary?.trim();
+    const initialSeconds =
+      typeof detail.time_control_initial_seconds === "number" &&
+      Number.isFinite(detail.time_control_initial_seconds)
+        ? detail.time_control_initial_seconds
+        : summaryUi?.timeControlInitialSeconds ?? null;
+    const incrementSeconds =
+      typeof detail.time_control_increment_seconds === "number" &&
+      Number.isFinite(detail.time_control_increment_seconds)
+        ? detail.time_control_increment_seconds
+        : summaryUi?.timeControlIncrementSeconds ?? null;
+    const whiteRemaining =
+      typeof detail.white_time_remaining_seconds === "number" &&
+      Number.isFinite(detail.white_time_remaining_seconds)
+        ? detail.white_time_remaining_seconds
+        : summaryUi?.whiteTimeRemainingSeconds ?? null;
+    const blackRemaining =
+      typeof detail.black_time_remaining_seconds === "number" &&
+      Number.isFinite(detail.black_time_remaining_seconds)
+        ? detail.black_time_remaining_seconds
+        : summaryUi?.blackTimeRemainingSeconds ?? null;
+    const turnStartTime = detail.turn_start_time ?? summaryUi?.turnStartTime ?? null;
     return {
       id: detail.id,
       opponent,
       status: detail.status,
       result: detail.result,
       resultDisplay: formatResult(detail.result),
-      summary: detail.summary || summaryUi?.summary || "Friendly challenge",
+      summary:
+        detailSummary ?? summaryRaw?.summary?.trim() ?? summaryUi?.summary ?? "",
+      hasCustomSummary:
+        Boolean(detailSummary) || Boolean(summaryRaw?.summary?.trim()),
       fen,
       initialFen: detail.initial_fen,
       pgn: detail.pgn,
@@ -278,6 +600,15 @@
       movesCount: detail.moves?.length ?? detail.moves_count,
       currentPositionHash: detail.current_position_hash,
       moves: detail.moves ?? [],
+      engineDepth:
+        normalizeEngineDepth(detail.engine_depth, engineKey) ??
+        normalizeEngineDepth(summaryUi?.engineDepth, engineKey) ??
+        null,
+      timeControlInitialSeconds: initialSeconds,
+      timeControlIncrementSeconds: incrementSeconds,
+      whiteTimeRemainingSeconds: whiteRemaining,
+      blackTimeRemainingSeconds: blackRemaining,
+      turnStartTime,
     };
   }
 
@@ -326,6 +657,27 @@
             played_at: playedAt,
           },
         ];
+    const initialSeconds =
+      typeof payload.time_control_initial_seconds === "number" &&
+      Number.isFinite(payload.time_control_initial_seconds)
+        ? payload.time_control_initial_seconds
+        : selectedGame.timeControlInitialSeconds ?? null;
+    const incrementSeconds =
+      typeof payload.time_control_increment_seconds === "number" &&
+      Number.isFinite(payload.time_control_increment_seconds)
+        ? payload.time_control_increment_seconds
+        : selectedGame.timeControlIncrementSeconds ?? null;
+    const whiteRemaining =
+      typeof payload.white_time_remaining_seconds === "number" &&
+      Number.isFinite(payload.white_time_remaining_seconds)
+        ? payload.white_time_remaining_seconds
+        : selectedGame.whiteTimeRemainingSeconds ?? null;
+    const blackRemaining =
+      typeof payload.black_time_remaining_seconds === "number" &&
+      Number.isFinite(payload.black_time_remaining_seconds)
+        ? payload.black_time_remaining_seconds
+        : selectedGame.blackTimeRemainingSeconds ?? null;
+    const turnStartTime = payload.turn_start_time ?? selectedGame.turnStartTime ?? null;
     selectedGame = {
       ...selectedGame,
       fen,
@@ -334,6 +686,11 @@
       lastUpdated: playedAt,
       pgn: appendPgn(selectedGame.pgn, moveNumber, notation),
       moves,
+      timeControlInitialSeconds: initialSeconds,
+      timeControlIncrementSeconds: incrementSeconds,
+      whiteTimeRemainingSeconds: whiteRemaining,
+      blackTimeRemainingSeconds: blackRemaining,
+      turnStartTime,
     };
   }
 
@@ -351,27 +708,33 @@
   }
 
   const gameStatusLabel = (game) => {
-    if (!game) return "";
+    if (!game) {
+      return "";
+    }
     if (game.status === "completed") {
-      return game.resultDisplay ? `Final · ${game.resultDisplay}` : "Final";
+      return game.resultDisplay
+        ? tr("game.status.finalWithResult", {
+            result: game.resultDisplay,
+          })
+        : tr("game.status.final");
     }
     if (game.status === "aborted") {
-      return "Aborted";
+      return tr("game.status.aborted");
     }
     if (game.turn === game.yourColor) {
-      return "Your move";
+      return tr("game.status.yourMove");
     }
-    return `${game.opponent.nickname}'s move`;
+    return tr("game.status.opponentMove", {
+      name: game.opponent.nickname,
+    });
   };
-
-  const colorLabel = (color) => (color === "black" ? "Black" : "White");
 
   async function performLogin(credentials) {
     const username = credentials?.username?.trim();
     const password = credentials?.password?.trim();
     landingError = "";
     if (!username || !password) {
-      landingError = "Username and password are required.";
+      landingError = tr("landing.form.error.required");
       return;
     }
     isLandingLoading = true;
@@ -383,7 +746,7 @@
       if (!loaded) {
         accessToken = "";
         persistToken("");
-        landingError = hubError || "Unable to finish signing in.";
+        landingError = hubError || tr("errors.loginIncomplete");
         isAuthenticated = false;
         return;
       }
@@ -392,8 +755,8 @@
       navigateTo(VIEW.GAMES);
       startHubPolling();
     } catch (error) {
-      landingError =
-        error instanceof Error ? error.message : "Unable to sign in.";
+      const message = error instanceof Error ? error.message : "";
+      landingError = message || tr("errors.login");
       accessToken = "";
       isAuthenticated = false;
       persistToken("");
@@ -408,13 +771,25 @@
     try {
       const hub = await fetchHubOverview(accessToken);
       currentUser = hub.user;
-      rawSummaryIndex = new Map();
-      uiSummaryIndex = new Map();
-      for (const summary of hub.games) {
-        rawSummaryIndex.set(summary.id, summary);
-        uiSummaryIndex.set(summary.id, mapGameSummary(summary));
-      }
-      games = Array.from(uiSummaryIndex.values());
+      availableEngines = Array.isArray(hub.engines)
+        ? hub.engines.map((engine) => {
+            const maxDepth =
+              typeof engine.max_depth === "number" && Number.isFinite(engine.max_depth)
+                ? Math.max(1, Math.min(64, Math.round(engine.max_depth)))
+                : null;
+            const limit = maxDepth ?? 64;
+            const defaultDepth =
+              typeof engine.default_depth === "number" && Number.isFinite(engine.default_depth)
+                ? Math.max(1, Math.min(limit, Math.round(engine.default_depth)))
+                : null;
+            return {
+              key: engine.key,
+              name: engine.name,
+              default_depth: defaultDepth,
+              max_depth: maxDepth,
+            };
+          })
+        : [];
       availableOpponents = Array.isArray(hub.opponents)
         ? hub.opponents.map(toOpponent).sort((a, b) => {
             if (a.isEngine !== b.isEngine) {
@@ -423,14 +798,21 @@
             return a.nickname.localeCompare(b.nickname);
           })
         : [];
+      rawSummaryIndex = new Map();
+      uiSummaryIndex = new Map();
+      for (const summary of hub.games) {
+        rawSummaryIndex.set(summary.id, summary);
+        uiSummaryIndex.set(summary.id, mapGameSummary(summary));
+      }
+      games = Array.from(uiSummaryIndex.values());
       profileDraft = {
         avatarUrl: hub.user.avatar_url || "",
         password: "",
       };
       return true;
     } catch (error) {
-      hubError =
-        error instanceof Error ? error.message : "Failed to load games.";
+      const message = error instanceof Error ? error.message : "";
+      hubError = message || tr("errors.loadHub");
       return false;
     }
   }
@@ -443,8 +825,8 @@
       selectedGame = mapGameDetail(detail);
       await maybeTriggerEngineMove(selectedGame);
     } catch (error) {
-      gameError =
-        error instanceof Error ? error.message : "Failed to load game.";
+      const message = error instanceof Error ? error.message : "";
+      gameError = message || tr("errors.loadGame");
     }
   }
 
@@ -471,6 +853,7 @@
 
   async function openGame(id) {
     if (!id || !isAuthenticated) return;
+    resetAnalysis();
     selectedGameId = id;
     gameError = "";
     await refreshSelectedGame(id);
@@ -528,16 +911,13 @@
         await loadHub();
       }
     } catch (error) {
-      const rawMessage =
-        error instanceof Error ? error.message : "Engine move request failed.";
+      const rawMessage = error instanceof Error ? error.message : "";
       if (rawMessage.includes("Engine binary")) {
-        gameError =
-          "Chess engine unavailable. Install the required host binary (e.g. skaks) and retry.";
+        gameError = tr("errors.engineUnavailable");
       } else if (rawMessage.includes("Engine terminated")) {
-        gameError =
-          "Chess engine terminated unexpectedly. Please try again soon.";
+        gameError = tr("errors.engineTerminated");
       } else {
-        gameError = rawMessage;
+        gameError = rawMessage || tr("errors.engineRequest");
       }
     } finally {
       engineMovePending = false;
@@ -551,10 +931,71 @@
   const handleOpponentChange = (opponentId) => {
     if (opponentId === null || opponentId === undefined) return;
     newGameOpponentId = String(opponentId);
+    syncOpponentPreferences(opponentId, { forceReset: true });
   };
 
   const handleColorChange = (color) => {
     newGameColor = color === "black" ? "black" : "white";
+  };
+
+  const handleDepthChange = (value) => {
+    const cleaned = sanitizeDepthInput(value);
+    if (!cleaned) {
+      newGameDepth = cleaned;
+      return;
+    }
+    const opponent = findOpponentById(newGameOpponentId);
+    const spec = opponent?.isEngine ? findEngineSpec(opponent.engineKey) : null;
+    const limit =
+      typeof spec?.max_depth === "number" && Number.isFinite(spec.max_depth)
+        ? spec.max_depth
+        : 64;
+    const clamped = clampDepthValue(cleaned, limit);
+    newGameDepth = clamped !== null ? String(clamped) : cleaned;
+  };
+
+  const handleInitialMinutesChange = (value) => {
+    const cleaned = sanitizeNumericInput(value);
+    if (!cleaned) {
+      newGameInitialMinutes = "";
+      return;
+    }
+    const clamped = clampIntegerValue(cleaned, {
+      min: 0,
+      max: MAX_INITIAL_MINUTES,
+    });
+    newGameInitialMinutes = clamped !== null ? String(clamped) : cleaned;
+  };
+
+  const handleIncrementSecondsChange = (value) => {
+    const cleaned = sanitizeNumericInput(value);
+    if (!cleaned) {
+      newGameIncrementSeconds = "";
+      return;
+    }
+    const clamped = clampIntegerValue(cleaned, {
+      min: 0,
+      max: MAX_INCREMENT_SECONDS,
+    });
+    newGameIncrementSeconds = clamped !== null ? String(clamped) : cleaned;
+  };
+
+  const handleEngineModeChange = (mode) => {
+    if (mode !== ENGINE_MODE_DEPTH && mode !== ENGINE_MODE_TIME) {
+      return;
+    }
+    if (newGameEngineMode === mode) {
+      return;
+    }
+    newGameEngineMode = mode;
+    if (mode === ENGINE_MODE_DEPTH) {
+      newGameInitialMinutes = "";
+      newGameIncrementSeconds = "";
+      syncNewGameDepth(newGameOpponentId, { forceReset: true });
+      return;
+    }
+    newGameDepth = "";
+    ensureTimeDefaults();
   };
 
   const launchGame = async () => {
@@ -566,6 +1007,7 @@
       (entry) => entry.id === opponentId,
     );
     if (!opponent) return;
+    const isEngineChallenge = Boolean(opponent.isEngine);
     const payload =
       newGameColor === "white"
         ? {
@@ -577,16 +1019,44 @@
             black_player_id: currentUser.id,
           };
     payload.summary = opponent.isEngine
-      ? `Engine match vs ${opponent.nickname}`
-      : "Friendly challenge";
+      ? tr("game.summary.engine", {
+          name: opponent.nickname || tr("label.engine"),
+        })
+      : tr("game.summary.default");
+    const useTimeControl = !isEngineChallenge || newGameEngineMode === ENGINE_MODE_TIME;
+    if (useTimeControl) {
+      const initialSeconds = normalizeInitialSeconds(newGameInitialMinutes);
+      const incrementSeconds = normalizeIncrementSeconds(newGameIncrementSeconds);
+      if (initialSeconds !== null) {
+        payload.initial_time_seconds = initialSeconds;
+        if (incrementSeconds !== null) {
+          payload.increment_seconds = incrementSeconds;
+        }
+      } else if (incrementSeconds !== null && incrementSeconds > 0) {
+        payload.increment_seconds = incrementSeconds;
+      }
+    }
+    if (isEngineChallenge) {
+      const spec = findEngineSpec(opponent.engineKey);
+      const limit =
+        typeof spec?.max_depth === "number" && Number.isFinite(spec.max_depth)
+          ? spec.max_depth
+          : 64;
+      if (newGameEngineMode === ENGINE_MODE_DEPTH) {
+        const depthValue = clampDepthValue(newGameDepth, limit);
+        if (depthValue !== null) {
+          payload.engine_depth = depthValue;
+        }
+      }
+    }
     try {
       const created = await createGame(payload, accessToken);
       await loadHub();
       await openGame(created.id);
       showNewGameForm = false;
     } catch (error) {
-      hubError =
-        error instanceof Error ? error.message : "Unable to create game.";
+      const message = error instanceof Error ? error.message : "";
+      hubError = message || tr("errors.createGame");
     }
   };
 
@@ -612,8 +1082,8 @@
         await loadHub();
       }
     } catch (error) {
-      gameError =
-        error instanceof Error ? error.message : "Move could not be recorded.";
+      const message = error instanceof Error ? error.message : "";
+      gameError = message || tr("errors.moveRecord");
       await refreshSelectedGame(selectedGame.id);
       await loadHub();
     }
@@ -630,15 +1100,81 @@
     try {
       await resignGame(selectedGame.id, accessToken);
     } catch (error) {
-      gameError =
-        error instanceof Error
-          ? error.message
-          : "Unable to resign from the game.";
+      const message = error instanceof Error ? error.message : "";
+      gameError = message || tr("errors.resign");
     } finally {
       await refreshSelectedGame(selectedGame.id);
       await loadHub();
     }
   };
+
+  // Trigger a Stockfish analysis for the completed game and capture the result.
+  async function runAnalysis(options = {}) {
+    if (!selectedGame || !isAuthenticated || !accessToken) {
+      return;
+    }
+    if (selectedGame.status !== "completed") {
+      analysisError = tr("analysis.error.unfinished");
+      return;
+    }
+
+    const requestedKey = options?.engineKey || analysisEngineSpec?.key || null;
+    const spec = requestedKey ? findEngineSpec(requestedKey) : analysisEngineSpec;
+    if (!spec) {
+      analysisError = tr("analysis.error.noEngine");
+      return;
+    }
+
+    const gameId = selectedGame.id;
+    isAnalysisLoading = true;
+    analysisError = "";
+
+    try {
+      const payload = { engine_key: spec.key };
+      const limit =
+        typeof spec.max_depth === "number" && Number.isFinite(spec.max_depth)
+          ? spec.max_depth
+          : 64;
+      const candidateDepth =
+        options?.depth ?? selectedGame.engineDepth ?? spec.default_depth ?? null;
+      const resolvedDepth =
+        candidateDepth !== null && candidateDepth !== undefined
+          ? clampDepthValue(candidateDepth, limit)
+          : null;
+      if (resolvedDepth) {
+        payload.depth = resolvedDepth;
+      }
+
+      const response = await analyzeGameSequence(gameId, payload, accessToken);
+      if (!selectedGame || selectedGame.id !== gameId) {
+        return;
+      }
+      analysisResult = {
+        engine:
+          response?.engine ?? {
+            key: spec.key,
+            name: spec.name,
+            default_depth: spec.default_depth ?? null,
+            max_depth: spec.max_depth ?? null,
+          },
+        depth: response?.depth ?? resolvedDepth ?? spec.default_depth ?? null,
+        evaluation_cp: response?.final_evaluation_cp ?? null,
+        mate_in: response?.final_mate_in ?? null,
+      };
+      analysisSteps = Array.isArray(response?.steps) ? response.steps : [];
+      analysisFetchedAt = new Date().toISOString();
+    } catch (error) {
+      if (!selectedGame || selectedGame.id !== gameId) {
+        return;
+      }
+      const message = error instanceof Error ? error.message : "";
+      analysisError = message || tr("analysis.error.generic");
+    } finally {
+      if (selectedGame && selectedGame.id === gameId) {
+        isAnalysisLoading = false;
+      }
+    }
+  }
 
   const saveProfile = async () => {
     if (!currentUser || !isAuthenticated) return;
@@ -659,8 +1195,8 @@
       currentUser = updated;
       profileDraft = { avatarUrl: updated.avatar_url || "", password: "" };
     } catch (error) {
-      hubError =
-        error instanceof Error ? error.message : "Failed to update profile.";
+      const message = error instanceof Error ? error.message : "";
+      hubError = message || tr("errors.profileUpdate");
     }
   };
 
@@ -673,6 +1209,7 @@
   const returnToGames = () => {
     currentView = VIEW.GAMES;
     teardownSocket();
+    resetAnalysis();
     startHubPolling();
     void loadHub();
     navigateTo(VIEW.GAMES);
@@ -700,9 +1237,14 @@
     showNewGameForm = false;
     newGameOpponentId = "";
     newGameColor = "white";
+    newGameDepth = "";
+    newGameInitialMinutes = "";
+    newGameIncrementSeconds = "";
+    newGameEngineMode = ENGINE_MODE_TIME;
     landingError = "";
     hubError = "";
     gameError = "";
+    resetAnalysis();
     currentView = VIEW.LANDING;
     navigateTo(VIEW.LANDING);
   };
@@ -724,6 +1266,7 @@
   }
 
   onMount(() => {
+    setLocale(detectInitialLocale());
     const storedToken = loadStoredToken();
     if (storedToken) {
       void restoreSession(storedToken).then(() => {
@@ -756,7 +1299,11 @@
         (opponent) => String(opponent.id) === newGameOpponentId,
       )
     ) {
-      newGameOpponentId = String(availableOpponents[0].id);
+      const defaultId = String(availableOpponents[0].id);
+      newGameOpponentId = defaultId;
+      syncOpponentPreferences(defaultId, { forceReset: true });
+    } else {
+      syncOpponentPreferences(newGameOpponentId);
     }
   }
 
@@ -783,14 +1330,26 @@
     stopHubPolling();
   }
 
+  $: analysisEngineSpec = (() => {
+    const stockfish = findEngineSpec("stockfish");
+    if (stockfish) {
+      return stockfish;
+    }
+    if (Array.isArray(availableEngines) && availableEngines.length) {
+      return availableEngines[0];
+    }
+    return null;
+  })();
+
   $: hubUser = currentUser
     ? {
         id: currentUser.id,
         nickname: currentUser.username,
         avatar: currentUser.avatar_url || fallbackAvatar(currentUser.username),
         rating:
-          1200 +
-          ((currentUser.games_won ?? 0) - (currentUser.games_lost ?? 0)) * 10,
+          typeof currentUser.rating === "number" && Number.isFinite(currentUser.rating)
+            ? Math.round(currentUser.rating)
+            : null,
       }
     : null;
 </script>
@@ -814,14 +1373,23 @@
       {selectedGameId}
       {showNewGameForm}
       {availableOpponents}
+      {availableEngines}
       {newGameOpponentId}
       {newGameColor}
+      newGameDepth={newGameDepth}
+      newGameInitialMinutes={newGameInitialMinutes}
+      newGameIncrementSeconds={newGameIncrementSeconds}
+      newGameEngineMode={newGameEngineMode}
       {formatTime}
       {gameStatusLabel}
       onOpenGame={openGame}
       onToggleNewGameForm={toggleNewGameForm}
       onChangeOpponent={handleOpponentChange}
       onChangeColor={handleColorChange}
+      onChangeDepth={handleDepthChange}
+      onChangeInitialMinutes={handleInitialMinutesChange}
+      onChangeIncrementSeconds={handleIncrementSecondsChange}
+      onChangeEngineMode={handleEngineModeChange}
       onLaunchGame={launchGame}
       onOpenProfile={openProfile}
       onLogout={logout}
@@ -837,10 +1405,16 @@
       game={selectedGame}
       {formatTime}
       {gameStatusLabel}
-      {colorLabel}
       onMove={handleBoardMove}
       onUndo={handleBoardUndo}
       onResign={handleResign}
+      analysisEngine={analysisEngineSpec}
+      {analysisResult}
+      analysisError={analysisError}
+      isAnalysisLoading={isAnalysisLoading}
+      analysisFetchedAt={analysisFetchedAt}
+      analysisSteps={analysisSteps}
+      onAnalyze={runAnalysis}
       onBack={returnToGames}
       onLogout={logout}
     />

@@ -61,6 +61,7 @@ def _make_opponent_summary(opponent: User, settings: Settings | None = None) -> 
         avatar_url=opponent.avatar_url,
         is_engine=opponent.is_engine,
         engine_key=opponent.engine_key,
+        rating=opponent.rating,
     )
 
 
@@ -89,6 +90,12 @@ def _make_game_summary(game: Game, current_user: User, settings: Settings) -> Hu
         your_color=your_color,
         turn=turn,
         pgn=game.pgn,
+        engine_depth=game.engine_depth,
+        time_control_initial_seconds=game.time_control_initial_seconds,
+        time_control_increment_seconds=game.time_control_increment_seconds,
+        white_time_remaining_seconds=game.white_time_remaining_seconds,
+        black_time_remaining_seconds=game.black_time_remaining_seconds,
+        turn_start_time=game.turn_start_time,
     )
 
 
@@ -113,7 +120,12 @@ async def get_hub_overview(
 
     user_read = UserRead.model_validate(current_user)
     engine_infos = [
-        EngineInfo(key=spec.key, name=spec.name, default_depth=spec.default_depth)
+        EngineInfo(
+            key=spec.key,
+            name=spec.name,
+            default_depth=spec.default_depth,
+            max_depth=spec.max_depth,
+        )
         for spec in settings.engine_specs
     ]
     return HubResponse(

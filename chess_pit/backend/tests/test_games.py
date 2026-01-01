@@ -146,6 +146,8 @@ async def test_player_can_resign(client):
     assert white_user.json()["games_played"] == 1
     assert black_user.json()["games_lost"] == 1
     assert black_user.json()["games_played"] == 1
+    assert white_user.json()["rating"] > 1200
+    assert black_user.json()["rating"] < 1200
 
 
 @pytest.fixture()
@@ -200,3 +202,5 @@ async def test_admin_finishes_game_updates_stats(admin_env, client):
     loser_data = loser_resp.json()
     assert loser_data["games_lost"] == 1
     assert loser_data["games_played"] == 1
+    assert user_data["rating"] > 1200
+    assert loser_data["rating"] < 1200

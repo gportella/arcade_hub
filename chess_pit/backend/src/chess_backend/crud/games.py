@@ -66,6 +66,7 @@ def finish_game(session: Session, game: Game, result: GameResult) -> Game:
     game.status = GameStatus.completed
     game.result = result
     game.last_move_at = datetime.utcnow()
+    game.turn_start_time = None
     if result == GameResult.white:
         outcome = "1-0"
     elif result == GameResult.black:

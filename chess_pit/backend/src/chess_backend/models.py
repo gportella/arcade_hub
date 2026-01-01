@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -47,6 +47,7 @@ class User(UserBase, table=True):  # type: ignore[call-arg]
     games_won: int = Field(default=0, ge=0)
     games_lost: int = Field(default=0, ge=0)
     games_drawn: int = Field(default=0, ge=0)
+    rating: int = Field(default=1200, ge=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -91,6 +92,36 @@ class Game(SQLModel, table=True):  # type: ignore[call-arg]
     pgn: str = Field(
         default="",
         sa_column=Column(Text, nullable=False),
+    )
+    engine_depth: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=64,
+        sa_column=Column(Integer, nullable=True),
+    )
+    time_control_initial_seconds: Optional[int] = Field(
+        default=None,
+        ge=0,
+        sa_column=Column(Integer, nullable=True),
+    )
+    time_control_increment_seconds: Optional[int] = Field(
+        default=None,
+        ge=0,
+        sa_column=Column(Integer, nullable=True),
+    )
+    white_time_remaining_seconds: Optional[int] = Field(
+        default=None,
+        ge=0,
+        sa_column=Column(Integer, nullable=True),
+    )
+    black_time_remaining_seconds: Optional[int] = Field(
+        default=None,
+        ge=0,
+        sa_column=Column(Integer, nullable=True),
+    )
+    turn_start_time: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=False), nullable=True),
     )
 
     white_player: "User" = Relationship(

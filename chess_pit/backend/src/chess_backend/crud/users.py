@@ -42,4 +42,3 @@ def update_user_stats(
     user.games_played = user.games_won + user.games_lost + user.games_drawn
     user.updated_at = datetime.utcnow()
     session.add(user)
-    session.commit()

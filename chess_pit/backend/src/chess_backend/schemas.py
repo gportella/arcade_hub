@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +44,7 @@ class UserRead(BaseModel):
     games_won: int
     games_lost: int
     games_drawn: int
+    rating: int
     created_at: datetime
     updated_at: datetime
 
@@ -56,6 +57,9 @@ class GameCreate(BaseModel):
     black_player_id: int
     initial_fen: Optional[str] = Field(default=None, max_length=100)
     summary: Optional[str] = Field(default=None, max_length=255)
+    engine_depth: Optional[int] = Field(default=None, ge=1, le=64)
+    initial_time_seconds: Optional[int] = Field(default=None, ge=0, le=86400)
+    increment_seconds: Optional[int] = Field(default=None, ge=0, le=600)
 
 
 class GameRead(BaseModel):
@@ -72,6 +76,12 @@ class GameRead(BaseModel):
     current_position_hash: Optional[str]
     summary: str
     pgn: str
+    engine_depth: Optional[int]
+    time_control_initial_seconds: Optional[int]
+    time_control_increment_seconds: Optional[int]
+    white_time_remaining_seconds: Optional[int]
+    black_time_remaining_seconds: Optional[int]
+    turn_start_time: Optional[datetime]
 
     class Config:
         from_attributes = True
@@ -107,6 +117,7 @@ class OpponentSummary(BaseModel):
     avatar_url: Optional[str]
     is_engine: bool = False
     engine_key: Optional[str] = None
+    rating: Optional[int] = None
 
 
 class HubGameSummary(BaseModel):
@@ -124,6 +135,17 @@ class HubGameSummary(BaseModel):
     your_color: str
     turn: str
     pgn: str
+    engine_depth: Optional[int]
+    time_control_initial_seconds: Optional[int]
+    time_control_increment_seconds: Optional[int]
+    white_time_remaining_seconds: Optional[int]
+    black_time_remaining_seconds: Optional[int]
+    turn_start_time: Optional[datetime]
+    time_control_initial_seconds: Optional[int]
+    time_control_increment_seconds: Optional[int]
+    white_time_remaining_seconds: Optional[int]
+    black_time_remaining_seconds: Optional[int]
+    turn_start_time: Optional[datetime]
 
 
 class HubResponse(BaseModel):
@@ -146,6 +168,7 @@ class EngineInfo(BaseModel):
     key: str
     name: str
     default_depth: Optional[int] = None
+    max_depth: Optional[int] = None
 
 
 class EngineMoveRequest(BaseModel):
@@ -159,3 +182,50 @@ class EngineMoveResponse(BaseModel):
     uci: str
     san: str
     fen: str
+
+
+class GameAnalysisRequest(BaseModel):
+    engine_key: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    depth: Optional[int] = Field(default=None, ge=1, le=64)
+
+
+class GameAnalysisResponse(BaseModel):
+    engine: EngineInfo
+    depth: int
+    evaluation_cp: Optional[int]
+    mate_in: Optional[int]
+    best_move_uci: Optional[str]
+    best_move_san: Optional[str]
+    line_uci: list[str]
+    line_san: list[str]
+
+
+class GameAnalysisSequenceRequest(BaseModel):
+    engine_key: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    depth: Optional[int] = Field(default=None, ge=1, le=64)
+
+
+class GameAnalysisStep(BaseModel):
+    move_index: int = Field(ge=0)
+    move_number: int = Field(ge=1)
+    turn: Literal["white", "black"]
+    played_san: str
+    played_uci: Optional[str]
+    evaluation_before_cp: Optional[int]
+    evaluation_after_cp: Optional[int]
+    mate_before: Optional[int]
+    mate_after: Optional[int]
+    best_move_uci: Optional[str]
+    best_move_san: Optional[str]
+    best_line_uci: list[str]
+    best_line_san: list[str]
+    fen_before: str
+    fen_after: str
+
+
+class GameAnalysisSequenceResponse(BaseModel):
+    engine: EngineInfo
+    depth: int
+    steps: list[GameAnalysisStep]
+    final_evaluation_cp: Optional[int]
+    final_mate_in: Optional[int]

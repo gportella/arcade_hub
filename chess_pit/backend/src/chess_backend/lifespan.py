@@ -98,6 +98,7 @@ def _bootstrap_engines(settings: Settings) -> None:
                     is_engine=True,
                     engine_key=spec.key,
                     avatar_url=None,
+                    rating=2000,
                 )
                 session.add(engine_user)
                 continue
@@ -111,6 +112,9 @@ def _bootstrap_engines(settings: Settings) -> None:
                 updated = True
             if engine_user.engine_key != spec.key:
                 engine_user.engine_key = spec.key
+                updated = True
+            if engine_user.rating < 2000:
+                engine_user.rating = 2000
                 updated = True
             if updated:
                 engine_user.updated_at = datetime.utcnow()

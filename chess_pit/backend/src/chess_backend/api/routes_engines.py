@@ -20,6 +20,11 @@ async def list_engines(
 ) -> list[EngineInfo]:
     settings = get_settings()
     return [
-        EngineInfo(key=spec.key, name=spec.name, default_depth=spec.default_depth)
+        EngineInfo(
+            key=spec.key,
+            name=spec.name,
+            default_depth=spec.default_depth,
+            max_depth=spec.max_depth,
+        )
         for spec in settings.engine_specs
     ]

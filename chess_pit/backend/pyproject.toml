@@ -24,6 +24,12 @@ dependencies = [
   "python-chess>=1.999,<2.0",
 ]
 
+[tool.poetry]
+name = "chess-pit-backend"
+version = "0.1.0"
+description = "FastAPI backend service for Chess Pit."
+authors = ["Arcade Hub <devs@arcadehub.local>"]
+
 [project.optional-dependencies]
 dev = [
   "httpx>=0.27,<0.28",

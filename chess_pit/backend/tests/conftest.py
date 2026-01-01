@@ -41,6 +41,7 @@ def configure_settings(tmp_path) -> Iterator[None]:
                 "name": "Mock Engine",
                 "binary": "mock-binary",
                 "default_depth": 3,
+                "max_depth": 10,
             }
         ]
     )
@@ -49,6 +50,8 @@ def configure_settings(tmp_path) -> Iterator[None]:
 
     original_compute = engine_runner.compute_best_move
     original_route_compute = routes_games.compute_best_move
+    original_analysis = engine_runner.compute_analysis
+    original_route_analysis = routes_games.compute_analysis
 
     def _fake_compute(spec, board, *, depth):
         """Return a deterministic opening move for tests."""
@@ -64,13 +67,52 @@ def configure_settings(tmp_path) -> Iterator[None]:
         trial_board.push(move)
         return engine_runner.EngineMove(uci=move.uci(), san=san, fen=trial_board.fen())
 
+    def _fake_analyse(spec, board, *, depth):
+        """Return a deterministic principal variation for tests."""
+
+        trial_board = board.copy()
+        line_moves: list[chess.Move] = []
+        preferred = chess.Move.from_uci("e2e4")
+        if preferred in trial_board.legal_moves:
+            line_moves.append(preferred)
+        else:
+            try:
+                first_legal = next(iter(trial_board.legal_moves))
+                line_moves.append(first_legal)
+            except StopIteration:
+                line_moves = []
+
+        pv_san: list[str] = []
+        temp_board = board.copy()
+        for move in line_moves:
+            pv_san.append(temp_board.san(move))
+            temp_board.push(move)
+
+        best_uci = line_moves[0].uci() if line_moves else None
+        best_san = pv_san[0] if pv_san else None
+        mate_in = 0 if not line_moves and trial_board.is_game_over() else None
+
+        return engine_runner.EngineAnalysis(
+            depth=depth,
+            best_move_uci=best_uci,
+            best_move_san=best_san,
+            evaluation_cp=32,
+            mate_in=mate_in,
+            line_uci=[move.uci() for move in line_moves],
+            line_san=pv_san,
+        )
+
     engine_runner.compute_best_move = _fake_compute  # type: ignore[assignment]
     routes_games.compute_best_move = _fake_compute  # type: ignore[assignment]
+    engine_runner.compute_analysis = _fake_analyse  # type: ignore[assignment]
+    routes_games.compute_analysis = _fake_analyse  # type: ignore[assignment]
 
     yield
 
     engine_runner.compute_best_move = original_compute  # type: ignore[assignment]
     routes_games.compute_best_move = original_route_compute  # type: ignore[assignment]
+    engine_runner.compute_analysis = original_analysis  # type: ignore[assignment]
+    routes_games.compute_analysis = original_route_analysis  # type: ignore[assignment]
     get_settings.cache_clear()
     os.environ.pop("CHESS_ENGINE_SPECS", None)
 
@@ -103,6 +145,7 @@ def engine() -> Iterator[Engine]:
                     is_admin=False,
                     is_engine=True,
                     engine_key=spec.key,
+                    rating=2000,
                 )
                 session.add(engine_user)
 

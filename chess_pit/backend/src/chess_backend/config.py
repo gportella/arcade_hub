@@ -16,6 +16,17 @@ class EngineSpec(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     binary: str = Field(min_length=1)
     default_depth: Optional[int] = Field(default=None, ge=1, le=64)
+    max_depth: Optional[int] = Field(default=None, ge=1, le=64)
+
+    @field_validator("default_depth")
+    @classmethod
+    def _validate_default_depth(cls, value: int | None, info):
+        if value is None:
+            return value
+        max_depth = info.data.get("max_depth")
+        if max_depth is not None and value > max_depth:
+            raise ValueError("default depth cannot exceed configured max depth")
+        return value
 
 
 class Settings(BaseSettings):
@@ -37,8 +48,20 @@ class Settings(BaseSettings):
     )
     engine_specs: List[EngineSpec] = Field(
         default_factory=lambda: [
-            EngineSpec(key="stockfish", name="Stockfish 17.1", binary="stockfish", default_depth=16),
-            EngineSpec(key="skaks", name="Skaks 0.7", binary="skaks", default_depth=6),
+            EngineSpec(
+                key="stockfish",
+                name="Stockfish 17.1",
+                binary="stockfish",
+                default_depth=16,
+                max_depth=64,
+            ),
+            EngineSpec(
+                key="skaks",
+                name="Skaks 0.7",
+                binary="skaks",
+                default_depth=6,
+                max_depth=10,
+            ),
         ],
         alias="CHESS_ENGINE_SPECS",
     )

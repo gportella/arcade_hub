@@ -18,6 +18,7 @@ async def test_user_registration_login_and_update(client):
     assert user["username"] == "alice"
     assert user["avatar_url"] == "https://example.com/avatar.png"
     assert user["is_admin"] is False
+    assert user["rating"] == 1200
 
     token_response = await client.post(
         "/auth/token",
@@ -34,6 +35,7 @@ async def test_user_registration_login_and_update(client):
     me_response = await client.get("/users/me", headers=headers)
     assert me_response.status_code == 200
     assert me_response.json()["username"] == "alice"
+    assert me_response.json()["rating"] == 1200
 
     list_response = await client.get("/users", headers=headers)
     assert list_response.status_code == 200

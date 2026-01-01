@@ -73,6 +73,11 @@ async def broadcast_move(game: Game, move: Move) -> None:
         "fen": move.fen,
         "position_hash": move.position_hash,
         "played_at": move.played_at,
+        "time_control_initial_seconds": game.time_control_initial_seconds,
+        "time_control_increment_seconds": game.time_control_increment_seconds,
+        "white_time_remaining_seconds": game.white_time_remaining_seconds,
+        "black_time_remaining_seconds": game.black_time_remaining_seconds,
+        "turn_start_time": game.turn_start_time,
     }
     await _manager.broadcast(game.id, payload)
 
@@ -86,5 +91,7 @@ async def broadcast_game_finished(game: Game) -> None:
         "result": game.result,
         "pgn": game.pgn,
         "completed_at": game.last_move_at,
+        "white_time_remaining_seconds": game.white_time_remaining_seconds,
+        "black_time_remaining_seconds": game.black_time_remaining_seconds,
     }
     await _manager.broadcast(game.id, payload)

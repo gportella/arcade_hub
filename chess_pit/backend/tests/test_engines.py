@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import chess
 import pytest
 
 
@@ -42,6 +43,7 @@ async def test_list_engines(client):
     assert payload
     assert payload[0]["key"] == "mock"
     assert payload[0]["default_depth"] == 3
+    assert payload[0]["max_depth"] == 10
 
 
 @pytest.mark.asyncio
@@ -134,3 +136,196 @@ async def test_engine_game_records_move(client):
     assert detail["moves_count"] == 2
     assert detail["moves"][1]["player_id"] == engine_opponent["id"]
     assert detail["moves"][1]["notation"] == engine_move["san"]
+
+
+@pytest.mark.asyncio
+async def test_game_engine_depth_applies_when_not_in_payload(client):
+    player = await _register_user(client, "depth_requester")
+
+    token = await _login(client, player["username"], "StrongPass123")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    hub_response = await client.get("/hub", headers=headers)
+    assert hub_response.status_code == 200
+    opponents = hub_response.json().get("opponents", [])
+    engine_opponent = next((item for item in opponents if item.get("engine_key") == "mock"), None)
+    assert engine_opponent is not None
+
+    desired_depth = 6
+    create_response = await client.post(
+        "/games",
+        json={
+            "white_player_id": player["id"],
+            "black_player_id": engine_opponent["id"],
+            "engine_depth": desired_depth,
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+    game = create_response.json()
+    assert game["engine_depth"] == desired_depth
+
+    engine_move_response = await client.post(
+        f"/games/{game['id']}/engine-move",
+        json={"engine_key": "mock"},
+        headers=headers,
+    )
+    assert engine_move_response.status_code == 200
+    payload = engine_move_response.json()
+    assert payload["depth"] == desired_depth
+
+
+@pytest.mark.asyncio
+async def test_engine_depth_clamped_to_spec(client):
+    player = await _register_user(client, "depth_clamper")
+
+    token = await _login(client, player["username"], "StrongPass123")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    hub_response = await client.get("/hub", headers=headers)
+    assert hub_response.status_code == 200
+    hub_payload = hub_response.json()
+    opponents = hub_payload.get("opponents", [])
+    engine_opponent = next((item for item in opponents if item.get("engine_key") == "mock"), None)
+    assert engine_opponent is not None
+
+    create_response = await client.post(
+        "/games",
+        json={
+            "white_player_id": player["id"],
+            "black_player_id": engine_opponent["id"],
+            "engine_depth": 25,
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+    game = create_response.json()
+    assert game["engine_depth"] == 10
+
+    engine_move_response = await client.post(
+        f"/games/{game['id']}/engine-move",
+        json={"engine_key": "mock", "depth": 64},
+        headers=headers,
+    )
+    assert engine_move_response.status_code == 200
+    payload = engine_move_response.json()
+    assert payload["depth"] == 10
+
+
+@pytest.mark.asyncio
+async def test_game_analysis_endpoint(client):
+    white = await _register_user(client, "analysis_white")
+    black = await _register_user(client, "analysis_black")
+
+    token = await _login(client, white["username"], "StrongPass123")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_response = await client.post(
+        "/games",
+        json={
+            "white_player_id": white["id"],
+            "black_player_id": black["id"],
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+    game = create_response.json()
+
+    admin_token = await _login(client, "admin", "AdminPass123")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    finish_response = await client.post(
+        f"/games/{game['id']}/finish",
+        json={"result": "white"},
+        headers=admin_headers,
+    )
+    assert finish_response.status_code == 200
+
+    analysis_response = await client.post(
+        f"/games/{game['id']}/analysis",
+        json={"engine_key": "mock", "depth": 12},
+        headers=headers,
+    )
+    assert analysis_response.status_code == 200
+    analysis = analysis_response.json()
+    assert analysis["engine"]["key"] == "mock"
+    assert analysis["depth"] == 10
+    assert analysis["evaluation_cp"] == 32
+    assert analysis["line_uci"] in ([], ["e2e4"])
+
+
+@pytest.mark.asyncio
+async def test_game_analysis_sequence_endpoint(client):
+    white = await _register_user(client, "sequence_white")
+    black = await _register_user(client, "sequence_black")
+
+    white_token = await _login(client, white["username"], "StrongPass123")
+    white_headers = {"Authorization": f"Bearer {white_token}"}
+
+    create_response = await client.post(
+        "/games",
+        json={
+            "white_player_id": white["id"],
+            "black_player_id": black["id"],
+        },
+        headers=white_headers,
+    )
+    assert create_response.status_code == 201
+    game = create_response.json()
+
+    board = chess.Board()
+
+    first_move = board.parse_san("e4")
+    board.push(first_move)
+    move_one_fen = board.fen()
+    first_move_response = await client.post(
+        f"/games/{game['id']}/moves",
+        json={"notation": "e4", "fen": move_one_fen},
+        headers=white_headers,
+    )
+    assert first_move_response.status_code == 201
+
+    black_token = await _login(client, black["username"], "StrongPass123")
+    black_headers = {"Authorization": f"Bearer {black_token}"}
+
+    second_move = board.parse_san("e5")
+    board.push(second_move)
+    move_two_fen = board.fen()
+    second_move_response = await client.post(
+        f"/games/{game['id']}/moves",
+        json={"notation": "e5", "fen": move_two_fen},
+        headers=black_headers,
+    )
+    assert second_move_response.status_code == 201
+
+    admin_token = await _login(client, "admin", "AdminPass123")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    finish_response = await client.post(
+        f"/games/{game['id']}/finish",
+        json={"result": "draw"},
+        headers=admin_headers,
+    )
+    assert finish_response.status_code == 200
+
+    analysis_response = await client.post(
+        f"/games/{game['id']}/analysis/sequence",
+        json={"engine_key": "mock", "depth": 8},
+        headers=white_headers,
+    )
+    assert analysis_response.status_code == 200
+    payload = analysis_response.json()
+
+    assert payload["engine"]["key"] == "mock"
+    assert payload["depth"] == 8
+    assert payload["final_evaluation_cp"] == 32
+    assert len(payload["steps"]) == 2
+
+    first_step = payload["steps"][0]
+    assert first_step["turn"] == "white"
+    assert first_step["played_san"] == "e4"
+    assert first_step["best_move_san"] in ("e4", None)
+    assert first_step["evaluation_before_cp"] == 32
+
+    second_step = payload["steps"][1]
+    assert second_step["turn"] == "black"
+    assert second_step["played_san"] == "e5"
+    assert second_step["evaluation_before_cp"] == 32

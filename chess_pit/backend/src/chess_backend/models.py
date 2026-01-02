@@ -6,7 +6,17 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum as SAEnum,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -71,6 +81,13 @@ class User(UserBase, table=True):  # type: ignore[call-arg]
         sa_relationship=relationship(
             "Move",
             back_populates="player",
+            lazy="selectin",
+        )
+    )
+    puzzle_attempts: list["PuzzleAttempt"] = Relationship(
+        sa_relationship=relationship(
+            "PuzzleAttempt",
+            back_populates="user",
             lazy="selectin",
         )
     )
@@ -172,5 +189,80 @@ class Move(SQLModel, table=True):  # type: ignore[call-arg]
         sa_relationship=relationship(
             "User",
             back_populates="moves",
+        )
+    )
+
+
+class PuzzleDifficulty(str, Enum):
+    easy = "easy"
+    medium = "medium"
+    hard = "hard"
+    expert = "expert"
+
+
+class Puzzle(SQLModel, table=True):  # type: ignore[call-arg]
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cool_id: str = Field(
+        max_length=40,
+        sa_column=Column(String(40), unique=True, nullable=False, index=True),
+    )
+    fen: str = Field(
+        max_length=100,
+        sa_column=Column(String(100), nullable=False),
+    )
+    difficulty: PuzzleDifficulty = Field(
+        sa_column=Column(
+            SAEnum(PuzzleDifficulty, name="puzzledifficulty"), index=True, nullable=False
+        )
+    )
+    source: Optional[str] = Field(default=None, max_length=100)
+    hint: Optional[str] = Field(default=None, max_length=255)
+    solution_moves: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
+    presented_count: int = Field(default=0, ge=0)
+    solve_count: int = Field(default=0, ge=0)
+    fail_count: int = Field(default=0, ge=0)
+    hint_count: int = Field(default=0, ge=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    attempts: list["PuzzleAttempt"] = Relationship(
+        sa_relationship=relationship(
+            "PuzzleAttempt",
+            back_populates="puzzle",
+            cascade="all, delete-orphan",
+            lazy="selectin",
+        )
+    )
+
+
+class PuzzleAttempt(SQLModel, table=True):  # type: ignore[call-arg]
+    id: Optional[int] = Field(default=None, primary_key=True)
+    puzzle_id: int = Field(foreign_key="puzzle.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = Field(default=None)
+    solved: bool = Field(default=False)
+    hint_count: int = Field(default=0, ge=0)
+    points_awarded: int = Field(default=0, ge=0)
+    submitted_moves: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
+
+    puzzle: "Puzzle" = Relationship(
+        sa_relationship=relationship(
+            "Puzzle",
+            back_populates="attempts",
+            lazy="joined",
+        )
+    )
+    user: "User" = Relationship(
+        sa_relationship=relationship(
+            "User",
+            back_populates="puzzle_attempts",
+            lazy="joined",
         )
     )

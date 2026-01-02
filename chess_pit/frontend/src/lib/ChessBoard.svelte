@@ -18,6 +18,8 @@
         n: "Knight",
     };
 
+    const PIECE_ANIMATION_DURATION_MS = 450;
+
     /**
      * @param {string | undefined} piece
      * @returns {piece is "q" | "r" | "b" | "n"}
@@ -68,6 +70,7 @@
     export let showStatus = true;
     export let showControls = true;
     export let interactive = true;
+    export let guidanceShapes = [];
 
     // New prop: PGN to replay
     /** @type {string | null} */
@@ -141,6 +144,8 @@
     let currentReplayAnalysisIndex = null;
     let currentReplayAnalysisStep = null;
     let overlayShapes = [];
+    let externalGuidanceShapes = [];
+    let drawableShapes = [];
     let currentReplayAnnotation = null;
     let boardAnnotationTone = "";
     let annotationSquare = null;
@@ -187,6 +192,27 @@
         }
         return shapes;
     })();
+    $: externalGuidanceShapes = Array.isArray(guidanceShapes)
+        ? guidanceShapes
+              .map((shape) => {
+                  if (!shape || typeof shape !== "object") {
+                      return null;
+                  }
+                  const base = {};
+                  if (typeof shape.brush === "string") {
+                      base.brush = shape.brush;
+                  }
+                  if (typeof shape.orig === "string") {
+                      base.orig = shape.orig;
+                  }
+                  if (typeof shape.dest === "string") {
+                      base.dest = shape.dest;
+                  }
+                  return base.orig ? base : null;
+              })
+              .filter(Boolean)
+        : [];
+    $: drawableShapes = [...externalGuidanceShapes, ...overlayShapes];
     $: currentReplayAnnotation = (() => {
         if (!replayActive || !currentReplayAnalysisStep) {
             return null;
@@ -419,6 +445,21 @@
         updateState();
     }
 
+    $: if (boardApi && hasMounted) {
+        const drawEnabled = drawableShapes.length > 0;
+        boardApi.set({
+            drawable: {
+                enabled: drawEnabled,
+                visible: drawEnabled,
+                shapes: drawableShapes,
+            },
+        });
+        if (typeof boardApi.setAutoShapes === "function") {
+            boardApi.setAutoShapes(drawableShapes);
+        }
+        boardApi.redrawAll?.();
+    }
+
     /** @param {Chess} ch */
     function computeDestinations(ch) {
         const destinations = new Map();
@@ -631,10 +672,14 @@
             },
         };
 
+        config.animation = {
+            duration: PIECE_ANIMATION_DURATION_MS,
+        };
+
         config.drawable = {
-            enabled: overlayShapes.length > 0,
+            enabled: drawableShapes.length > 0,
             visible: true,
-            shapes: overlayShapes,
+            shapes: drawableShapes,
         };
 
         if (fenChanged) {
@@ -644,7 +689,7 @@
 
         boardApi.set(config);
         if (typeof boardApi.setAutoShapes === "function") {
-            boardApi.setAutoShapes(overlayShapes);
+            boardApi.setAutoShapes(drawableShapes);
         }
     }
 
@@ -1043,7 +1088,7 @@
                 bind:api={boardApi}
                 fen={currentFen}
                 orientation={resolvedOrientation}
-                animationDuration={200}
+                animationDuration={PIECE_ANIMATION_DURATION_MS}
                 draggableShowGhost={true}
                 highlightLastMove={true}
                 highlightCheck={Boolean(checkColor)}

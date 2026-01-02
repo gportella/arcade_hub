@@ -26,8 +26,11 @@
     export let onChangeEngineMode = (_mode) => {};
     export let onLaunchGame = () => {};
     export let onOpenProfile = () => {};
+    export let onOpenPuzzles = () => {};
+    export let onOpenAdmin = () => {};
     export let onLogout = () => {};
     export let onRefreshGames = () => {};
+    export let showAdminLink = false;
 
     const isFinished = (game) =>
         game.status === "completed" || game.status === "aborted";
@@ -42,6 +45,8 @@
     $: logoutLabel = $t("hub.actions.logout");
     $: profileLabel = $t("hub.actions.profile");
     $: profileAria = $t("hub.actions.profileAria");
+    $: puzzlesLabel = $t("hub.actions.puzzles");
+    $: adminLabel = $t("hub.actions.admin");
     $: matchesHeading = $t("hub.section.matches");
     $: refreshLabel = $t("hub.actions.refresh");
     $: newLabel = $t("hub.actions.new");
@@ -397,6 +402,14 @@
                     </div>
                 </button>
             {/if}
+            {#if showAdminLink}
+                <button type="button" class="micro secondary" on:click={onOpenAdmin}>
+                    {adminLabel}
+                </button>
+            {/if}
+            <button type="button" class="micro secondary" on:click={onOpenPuzzles}>
+                {puzzlesLabel}
+            </button>
             <button type="button" class="micro" on:click={onLogout}>
                 {logoutLabel}
             </button>

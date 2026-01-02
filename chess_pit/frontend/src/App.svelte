@@ -3,8 +3,10 @@
   import { get } from "svelte/store";
   import LandingView from "./lib/views/LandingView.svelte";
   import GameHubView from "./lib/views/GameHubView.svelte";
+  import AdminUsersView from "./lib/views/AdminUsersView.svelte";
   import GamePlayView from "./lib/views/GamePlayView.svelte";
   import ProfileView from "./lib/views/ProfileView.svelte";
+  import PuzzleTrainerView from "./lib/views/PuzzleTrainerView.svelte";
 
   import {
     login,
@@ -18,6 +20,7 @@
     updateUser,
     resignGame,
     connectToGame,
+    fetchAdminUsers,
   } from "./lib/api/client";
   import {
     persistToken,
@@ -37,6 +40,8 @@
     GAMES: "games",
     PLAY: "play",
     PROFILE: "profile",
+    PUZZLES: "puzzles",
+    ADMIN: "admin",
   });
 
   // --- Simple router (hash-based) ---
@@ -45,6 +50,8 @@
     if (view === VIEW.LANDING) return "#/login";
     if (view === VIEW.GAMES) return "#/games";
     if (view === VIEW.PROFILE) return "#/profile";
+    if (view === VIEW.PUZZLES) return "#/puzzles";
+    if (view === VIEW.ADMIN) return "#/admin";
     if (view === VIEW.PLAY) {
       const id = params.id ?? selectedGameId;
       return id ? `#/game/${id}` : "#/games";
@@ -59,6 +66,8 @@
 
     if (segment === "games") return { view: VIEW.GAMES, params: {} };
     if (segment === "profile") return { view: VIEW.PROFILE, params: {} };
+    if (segment === "puzzles") return { view: VIEW.PUZZLES, params: {} };
+    if (segment === "admin") return { view: VIEW.ADMIN, params: {} };
     if (segment === "game" && arg) {
       const idNum = Number(arg);
       return {
@@ -103,6 +112,25 @@
       return;
     }
 
+    if (view === VIEW.PUZZLES) {
+      currentView = VIEW.PUZZLES;
+      teardownSocket();
+      stopHubPolling();
+      return;
+    }
+
+    if (view === VIEW.ADMIN) {
+      if (!isAuthenticated || !currentUser?.is_admin) {
+        currentView = isAuthenticated ? VIEW.GAMES : VIEW.LANDING;
+        return;
+      }
+      currentView = VIEW.ADMIN;
+      teardownSocket();
+      stopHubPolling();
+      await loadAdminUsers();
+      return;
+    }
+
     if (view === VIEW.PLAY) {
       const id = params.id ?? selectedGameId;
       if (!id) {
@@ -133,7 +161,7 @@
   const DEFAULT_TIME_MINUTES = 10;
   const DEFAULT_INCREMENT_SECONDS = 5;
 
-  /** @type {"landing" | "games" | "play" | "profile"} */
+  /** @type {"landing" | "games" | "play" | "profile" | "puzzles" | "admin"} */
   let currentView = VIEW.LANDING;
   let isAuthenticated = false;
   let accessToken = "";
@@ -167,6 +195,9 @@
   let analysisError = "";
   let isAnalysisLoading = false;
   let analysisFetchedAt = null;
+  let adminUsers = [];
+  let adminError = "";
+  let isAdminLoading = false;
   let analysisEngineSpec = null;
   let analysisSteps = [];
 
@@ -815,6 +846,26 @@
     }
   }
 
+  async function loadAdminUsers() {
+    if (!accessToken || !isAuthenticated || !currentUser?.is_admin) {
+      adminUsers = [];
+      adminError = "";
+      return;
+    }
+    isAdminLoading = true;
+    adminError = "";
+    try {
+      const payload = await fetchAdminUsers(accessToken);
+      adminUsers = Array.isArray(payload) ? payload : [];
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      adminError = message || tr("errors.loadAdminUsers");
+      adminUsers = [];
+    } finally {
+      isAdminLoading = false;
+    }
+  }
+
   async function refreshSelectedGame(gameId) {
     if (!accessToken) return;
     gameError = "";
@@ -1199,9 +1250,18 @@
   };
 
   const openProfile = () => {
-    currentView = VIEW.PROFILE;
-    stopHubPolling();
+    if (!isAuthenticated) return;
     navigateTo(VIEW.PROFILE);
+  };
+
+  const openPuzzles = () => {
+    if (!isAuthenticated) return;
+    navigateTo(VIEW.PUZZLES);
+  };
+
+  const openAdmin = () => {
+    if (!isAuthenticated || !currentUser?.is_admin) return;
+    navigateTo(VIEW.ADMIN);
   };
 
   const returnToGames = () => {
@@ -1242,6 +1302,9 @@
     landingError = "";
     hubError = "";
     gameError = "";
+    adminUsers = [];
+    adminError = "";
+    isAdminLoading = false;
     resetAnalysis();
     currentView = VIEW.LANDING;
     navigateTo(VIEW.LANDING);
@@ -1322,6 +1385,10 @@
     currentView = isAuthenticated ? VIEW.GAMES : VIEW.LANDING;
   }
 
+  $: if (currentView === VIEW.ADMIN && (!isAuthenticated || !currentUser?.is_admin)) {
+    currentView = isAuthenticated ? VIEW.GAMES : VIEW.LANDING;
+  }
+
   $: if (isAuthenticated && currentView === VIEW.GAMES) {
     startHubPolling();
   } else if (currentView !== VIEW.GAMES) {
@@ -1390,7 +1457,10 @@
       onChangeEngineMode={handleEngineModeChange}
       onLaunchGame={launchGame}
       onOpenProfile={openProfile}
+      onOpenPuzzles={openPuzzles}
+      onOpenAdmin={openAdmin}
       onLogout={logout}
+      showAdminLink={Boolean(currentUser?.is_admin)}
       onRefreshGames={() => {
         void loadHub();
       }}
@@ -1423,6 +1493,23 @@
       gameCount={orderedGames.length}
       onFieldChange={handleProfileFieldChange}
       onSave={saveProfile}
+      onBack={returnToGames}
+      onLogout={logout}
+    />
+  {:else if currentView === VIEW.ADMIN && isAuthenticated && currentUser?.is_admin}
+    <AdminUsersView
+      users={adminUsers}
+      isLoading={isAdminLoading}
+      error={adminError}
+      onRefresh={loadAdminUsers}
+      onBack={returnToGames}
+      onLogout={logout}
+      {formatTime}
+    />
+  {:else if currentView === VIEW.PUZZLES && isAuthenticated}
+    <PuzzleTrainerView
+      token={accessToken}
+      user={currentUser}
       onBack={returnToGames}
       onLogout={logout}
     />

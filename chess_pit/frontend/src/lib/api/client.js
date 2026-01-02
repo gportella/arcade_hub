@@ -85,6 +85,13 @@ export async function fetchHubOverview(token) {
     return handleResponse(response);
 }
 
+export async function fetchAdminUsers(token) {
+    const response = await fetch(`${API_BASE}/admin/users`, {
+        headers: buildJsonHeaders(token),
+    });
+    return handleResponse(response);
+}
+
 export async function fetchGameDetail(gameId, token) {
     const response = await fetch(`${API_BASE}/games/${gameId}`, {
         headers: buildJsonHeaders(token),
@@ -159,6 +166,54 @@ export async function updateUser(userId, payload, token) {
         method: "PATCH",
         headers: buildJsonHeaders(token),
         body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+}
+
+export async function fetchRandomPuzzle({ difficulty } = {}, token) {
+    const params = new URLSearchParams();
+    if (difficulty) {
+        params.set("difficulty", difficulty);
+    }
+    const query = params.toString();
+    const response = await fetch(
+        `${API_BASE}/puzzles/random${query ? `?${query}` : ""}`,
+        {
+            headers: buildJsonHeaders(token),
+        },
+    );
+
+    if (response.status === 404) {
+        const text = await response.text();
+        let detail = "";
+        if (text) {
+            try {
+                const payload = JSON.parse(text);
+                detail = payload.detail || payload.message || "";
+            } catch (_error) {
+                detail = text;
+            }
+        }
+        return { missing: true, detail: detail.trim() };
+    }
+
+    return handleResponse(response);
+}
+
+export async function requestPuzzleHint(coolId, { attemptId }, token) {
+    const response = await fetch(`${API_BASE}/puzzles/${coolId}/hint`, {
+        method: "POST",
+        headers: buildJsonHeaders(token),
+        body: JSON.stringify({ attempt_id: attemptId }),
+    });
+    return handleResponse(response);
+}
+
+export async function submitPuzzleMove(coolId, { attemptId, move }, token) {
+    const response = await fetch(`${API_BASE}/puzzles/${coolId}/submit`, {
+        method: "POST",
+        headers: buildJsonHeaders(token),
+        body: JSON.stringify({ attempt_id: attemptId, move }),
     });
     return handleResponse(response);
 }

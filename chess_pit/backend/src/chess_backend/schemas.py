@@ -7,7 +7,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from .models import GameResult, GameStatus
+from .models import GameResult, GameStatus, PuzzleDifficulty
 
 
 class Token(BaseModel):
@@ -45,6 +45,34 @@ class UserRead(BaseModel):
     games_lost: int
     games_drawn: int
     rating: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AdminUserMetrics(BaseModel):
+    id: int
+    username: str
+    avatar_url: Optional[str]
+    is_admin: bool
+    is_engine: bool
+    engine_key: Optional[str]
+    rating: int
+    games_played: int
+    games_won: int
+    games_lost: int
+    games_drawn: int
+    active_games: int
+    completed_games: int
+    aborted_games: int
+    last_game_at: Optional[datetime]
+    puzzles_attempted: int
+    puzzles_solved: int
+    puzzles_failed: int
+    last_puzzle_attempt_at: Optional[datetime]
+    last_activity_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
 
@@ -229,3 +257,55 @@ class GameAnalysisSequenceResponse(BaseModel):
     steps: list[GameAnalysisStep]
     final_evaluation_cp: Optional[int]
     final_mate_in: Optional[int]
+
+
+class PuzzleSessionResponse(BaseModel):
+    attempt_id: int
+    cool_id: str
+    fen: str
+    difficulty: PuzzleDifficulty
+    hint_available: bool
+    max_points: int = 3
+    current_points: int
+    times_presented: int
+    times_solved: int
+    side_to_move: Literal["white", "black"]
+    remaining_moves: int = Field(ge=0, default=1)
+    correct_moves: list[str] = Field(default_factory=list)
+
+
+class PuzzleHintRequest(BaseModel):
+    attempt_id: int
+
+
+class PuzzleHintResponse(BaseModel):
+    attempt_id: int
+    cool_id: str
+    hint: Optional[str] = None
+    current_points: int
+    move_uci: Optional[str] = None
+    move_san: Optional[str] = None
+    from_square: Optional[str] = None
+    to_square: Optional[str] = None
+
+
+class PuzzleSubmitRequest(BaseModel):
+    attempt_id: int
+    move: str = Field(min_length=2, max_length=12)
+
+
+class PuzzleSubmitResponse(BaseModel):
+    attempt_id: int
+    cool_id: str
+    status: Literal["in_progress", "solved", "failed"]
+    solved: bool
+    points_awarded: int
+    current_points: int
+    correct_moves: list[str]
+    total_user_points: int
+    board_fen: str
+    side_to_move: Literal["white", "black"]
+    submitted_moves: list[str]
+    remaining_moves: int = Field(ge=0, default=0)
+    opponent_move: Optional[str] = None
+    opponent_move_san: Optional[str] = None

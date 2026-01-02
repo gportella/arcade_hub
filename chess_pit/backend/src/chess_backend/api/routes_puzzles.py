@@ -67,16 +67,13 @@ def _normalize_move(board: chess.Board, move_text: str) -> str | None:
             return None
 
 
-def _remaining_player_moves(
-    solution_moves: list[str], played_count: int, initial_turn_white: bool
-) -> int:
+def _remaining_player_moves(solution_moves: list[str], played_count: int) -> int:
     if played_count >= len(solution_moves):
         return 0
 
     remaining = 0
     for index in range(played_count, len(solution_moves)):
-        is_player_turn = (index % 2 == 0) if initial_turn_white else (index % 2 == 1)
-        if is_player_turn:
+        if (index - played_count) % 2 == 0:
             remaining += 1
     return remaining
 
@@ -179,11 +176,7 @@ def _build_session_response(puzzle: Puzzle, attempt: PuzzleAttempt) -> PuzzleSes
     board = chess.Board(puzzle.fen)
     initial_turn_white = board.turn == chess.WHITE
     solution_moves = [move.lower() for move in puzzle.solution_moves if move]
-    remaining_moves = _remaining_player_moves(
-        solution_moves,
-        played_count=len(attempt.submitted_moves),
-        initial_turn_white=initial_turn_white,
-    )
+    remaining_moves = _remaining_player_moves(solution_moves, played_count=len(attempt.submitted_moves))
     current_points = max(0, _MAX_POINTS - attempt.hint_count)
     return PuzzleSessionResponse(
         attempt_id=attempt.id,
@@ -388,11 +381,7 @@ async def submit_puzzle_solution(
         except ValueError:
             opponent_move = None
 
-    remaining_player_moves = _remaining_player_moves(
-        solution_moves,
-        played_count=len(submitted_moves),
-        initial_turn_white=initial_turn_white,
-    )
+    remaining_player_moves = _remaining_player_moves(solution_moves, played_count=len(submitted_moves))
 
     side_to_move = "white" if board.turn == chess.WHITE else "black"
 

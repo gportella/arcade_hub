@@ -192,8 +192,9 @@
     const playerColor = payload.side_to_move === "black" ? "black" : "white";
     const indices = derivePlayerMoveIndices(baseFen, solution, playerColor);
     const submitted = normalizeMoveList(payload.submitted_moves ?? []);
-    const remainingPlayerMoves = computeRemainingPlayerMoves(submitted.length, indices);
-    const solvedPlayerMoves = indices.length - remainingPlayerMoves;
+    const remainingPlayerMoves = typeof payload.remaining_moves === "number"
+      ? Math.max(0, payload.remaining_moves)
+      : computeRemainingPlayerMoves(submitted.length, indices);
 
     return {
       attemptId: payload.attempt_id,
@@ -205,7 +206,6 @@
       submitted,
       playerColor,
       playerIndices: indices,
-      playerPointer: Math.max(0, solvedPlayerMoves),
       remainingPlayerMoves,
       hintAvailable: payload.hint_available,
       hintCount: 0,
@@ -312,11 +312,32 @@
     lastSubmittedUci = "";
   };
 
+  const determinePlayerPointer = (snapshot) => {
+    if (!snapshot) return 0;
+    const indices = Array.isArray(snapshot.playerIndices) ? snapshot.playerIndices : [];
+    if (!indices.length) return 0;
+    const submitted = normalizeMoveList(snapshot.submitted ?? []);
+    let solved = 0;
+    for (const index of indices) {
+      if (index < submitted.length) {
+        const played = submitted[index] ?? "";
+        const expected = normalizeMove(snapshot.solution?.[index] ?? "");
+        if (played && expected && played === expected) {
+          solved += 1;
+        }
+      } else {
+        break;
+      }
+    }
+    return Math.min(indices.length, solved);
+  };
+
   const expectedMove = () => {
     if (!session) return "";
     if (!Array.isArray(session.playerIndices) || !session.playerIndices.length) return "";
-    if (session.playerPointer >= session.playerIndices.length) return "";
-    const targetIndex = session.playerIndices[session.playerPointer];
+    const pointer = determinePlayerPointer(session);
+    if (pointer >= session.playerIndices.length) return "";
+    const targetIndex = session.playerIndices[pointer];
     return session.solution?.[targetIndex] ?? "";
   };
 
@@ -335,7 +356,6 @@
     const remainingPlayerMoves = typeof payload.remaining_moves === "number"
       ? Math.max(0, payload.remaining_moves)
       : computeRemainingPlayerMoves(submitted.length, playerIndices);
-    const solvedPlayerMoves = Math.max(0, playerIndices.length - remainingPlayerMoves);
 
     const boardState = playMoves(session.baseFen, submitted);
     const nextFen = normalizeFen(payload.board_fen) ?? boardState.fen ?? session.currentFen;
@@ -345,7 +365,6 @@
       solution,
       submitted,
       playerIndices,
-      playerPointer: solvedPlayerMoves,
       remainingPlayerMoves,
       currentFen: nextFen,
       hintAvailable:
@@ -499,7 +518,7 @@
     }
   };
 
-  const handleSubmissionResponse = (payload) => {
+  const handleSubmissionResponse = async (payload) => {
     if (!session) return;
 
     const translator = get(t);
@@ -531,6 +550,7 @@
       hintMessage = "";
       guidanceShapes = [];
       clearAutoAdvance();
+      await restartCurrentPuzzle();
     } else {
       const opponentLabel = payload.opponent_move_san || payload.opponent_move || "";
       const keepGoing = translator("puzzles.feedback.keepGoing");
@@ -580,17 +600,6 @@
       return;
     }
 
-    const translator = get(t);
-    const expected = expectedMove();
-
-    if (!expected || uci !== expected) {
-      errorMessage = translator("puzzles.feedback.wrong");
-      hintMessage = "";
-      guidanceShapes = [];
-      syncBoardToSession({ forceReset: true });
-      return;
-    }
-
     submittingMove = true;
     errorMessage = "";
     infoMessage = "";
@@ -608,7 +617,7 @@
       token,
     )
       .then((response) => {
-        handleSubmissionResponse(response);
+        void handleSubmissionResponse(response);
       })
       .catch((error) => {
         handleSubmissionError(error);
@@ -678,7 +687,7 @@
 
   const handleResetMove = async () => {
     if (!session) return;
-    if (session.status !== "active") {
+    if (session.status !== "active" || !hasSubmittedMoves()) {
       await restartCurrentPuzzle();
       return;
     }
@@ -747,9 +756,7 @@
   $: timesSolved = session?.stats?.solved ?? 0;
   $: hintCount = session?.hintCount ?? 0;
   $: attemptFinished = session ? session.status !== "active" : false;
-  $: canResetCurrentAttempt = Boolean(
-    session && (attemptFinished || hasSubmittedMoves() || Boolean(pendingMoveLabel)),
-  );
+  $: canResetCurrentAttempt = Boolean(session && !loadingPuzzle && !submittingMove);
   $: boardInteractive = Boolean(session && session.status === "active" && !loadingPuzzle && !submittingMove);
   $: puzzleTitle = formatPuzzleName(session?.coolId);
   $: statusTone = errorMessage ? "error" : infoMessage ? "info" : hintMessage ? "hint" : "muted";

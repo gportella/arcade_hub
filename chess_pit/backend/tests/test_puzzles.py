@@ -242,14 +242,18 @@ async def test_puzzle_multi_move_with_auto_reply(client, engine):
 async def test_puzzle_restart_creates_new_attempt(client, engine):
     headers = await _register_and_login(client, "puzzle_retry", "StrongPass123")
 
+    board = chess.Board(DEFAULT_START_FEN)
+    board.push_san("e4")
+    black_to_move_fen = board.fen()
+
     with Session(engine) as session:
         puzzle = Puzzle(
             cool_id="retry-lesson-001",
-            fen=DEFAULT_START_FEN,
+            fen=black_to_move_fen,
             difficulty=PuzzleDifficulty.easy,
             source="test-suite",
             hint=None,
-            solution_moves=["e2e4"],
+            solution_moves=["c7c5", "g2g3", "d7d6", "f1g2"],
         )
         session.add(puzzle)
         session.commit()
@@ -267,7 +271,7 @@ async def test_puzzle_restart_creates_new_attempt(client, engine):
     fail_response = await client.post(
         f"/puzzles/{cool_id}/submit",
         headers=headers,
-        json={"attempt_id": first_attempt_id, "move": "d2d4"},
+        json={"attempt_id": first_attempt_id, "move": "a7a6"},
     )
     assert fail_response.status_code == 200
     assert fail_response.json()["status"] == "failed"
@@ -279,13 +283,24 @@ async def test_puzzle_restart_creates_new_attempt(client, engine):
     assert restart_response.status_code == 201
     restart_payload = restart_response.json()
     assert restart_payload["cool_id"] == cool_id
-    assert restart_payload["remaining_moves"] == 1
+    assert restart_payload["remaining_moves"] == 2
     assert restart_payload["attempt_id"] != first_attempt_id
 
     retry_submit = await client.post(
         f"/puzzles/{cool_id}/submit",
         headers=headers,
-        json={"attempt_id": restart_payload["attempt_id"], "move": "e2e4"},
+        json={"attempt_id": restart_payload["attempt_id"], "move": "c7c5"},
     )
     assert retry_submit.status_code == 200
-    assert retry_submit.json()["status"] == "solved"
+    retry_payload = retry_submit.json()
+    assert retry_payload["status"] == "in_progress"
+    assert retry_payload["remaining_moves"] == 1
+    assert retry_payload["submitted_moves"][:2] == ["c7c5", "g2g3"]
+
+    final_submit = await client.post(
+        f"/puzzles/{cool_id}/submit",
+        headers=headers,
+        json={"attempt_id": restart_payload["attempt_id"], "move": "d7d6"},
+    )
+    assert final_submit.status_code == 200
+    assert final_submit.json()["status"] == "solved"

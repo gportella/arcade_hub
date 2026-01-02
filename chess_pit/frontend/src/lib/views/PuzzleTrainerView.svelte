@@ -243,6 +243,7 @@
   let boardInteractive = false;
   let lastSubmittedUci = "";
   let celebrationActive = false;
+  let restartingAttempt = false;
   let canResetCurrentAttempt = false;
 
   const formatPuzzleName = (value) => {
@@ -476,45 +477,63 @@
   };
 
   const restartCurrentPuzzle = async () => {
-    if (!session || !token || loadingPuzzle) return;
+    if (!session || !token || restartingAttempt) return;
+
+    const translator = get(t);
+    const targetCoolId = session.coolId;
+    const fallbackDifficulty = session.difficulty ?? selectedDifficulty;
+    const playerMoveSlots = Array.isArray(session.playerIndices) ? session.playerIndices.length : 0;
 
     clearAutoAdvance();
-    loadingPuzzle = true;
+    restartingAttempt = true;
     submittingMove = false;
     hintLoading = false;
     resetTransientState();
     celebrationActive = false;
 
-    const translator = get(t);
+    const baseFen = session.baseFen ?? session.currentFen;
+    session = {
+      ...session,
+      attemptId: null,
+      status: "active",
+      submitted: [],
+      remainingPlayerMoves: playerMoveSlots,
+      currentFen: baseFen,
+      hintAvailable: session.hintAvailable,
+      hintCount: 0,
+    };
+
+    syncBoardToSession({ forceReset: true });
+    infoMessage = "";
+    errorMessage = "";
 
     try {
-      const payload = await restartPuzzleAttempt(session.coolId, token);
-      const resolvedDifficulty = payload?.difficulty ?? session.difficulty ?? selectedDifficulty;
-      session = buildSessionFromPayload(payload, resolvedDifficulty);
+      const payload = await restartPuzzleAttempt(targetCoolId, token);
+      const resolvedDifficulty = payload?.difficulty ?? fallbackDifficulty;
+      const rebuilt = buildSessionFromPayload(payload, resolvedDifficulty);
       if (typeof payload.total_user_points === "number") {
         totalPoints = payload.total_user_points;
       }
       selectedDifficulty = resolvedDifficulty;
 
       game.reset();
-      if (session.baseFen) {
+      if (rebuilt.baseFen) {
         try {
-          game.load(session.baseFen);
+          game.load(rebuilt.baseFen);
         } catch (_error) {
           game.reset();
         }
       }
 
-      session.currentFen = normalizeFen(game.fen()) ?? game.fen();
+      rebuilt.currentFen = normalizeFen(game.fen()) ?? game.fen();
+      session = rebuilt;
       syncBoardToSession({ forceReset: true });
-      infoMessage = "";
-      errorMessage = "";
     } catch (error) {
       const message = error instanceof Error ? error.message : translator("puzzles.error.load");
       errorMessage = message;
       syncBoardToSession({ forceReset: true });
     } finally {
-      loadingPuzzle = false;
+      restartingAttempt = false;
     }
   };
 
@@ -550,7 +569,7 @@
       hintMessage = "";
       guidanceShapes = [];
       clearAutoAdvance();
-      await restartCurrentPuzzle();
+      void restartCurrentPuzzle();
     } else {
       const opponentLabel = payload.opponent_move_san || payload.opponent_move || "";
       const keepGoing = translator("puzzles.feedback.keepGoing");
@@ -688,7 +707,7 @@
   const handleResetMove = async () => {
     if (!session) return;
     if (session.status !== "active" || !hasSubmittedMoves()) {
-      await restartCurrentPuzzle();
+      void restartCurrentPuzzle();
       return;
     }
     const boardState = playMoves(session.baseFen, session.submitted);
@@ -705,7 +724,7 @@
   };
 
   const handleRetryPuzzle = async () => {
-    await restartCurrentPuzzle();
+    void restartCurrentPuzzle();
   };
 
   const handleNextPuzzle = () => {
@@ -756,8 +775,10 @@
   $: timesSolved = session?.stats?.solved ?? 0;
   $: hintCount = session?.hintCount ?? 0;
   $: attemptFinished = session ? session.status !== "active" : false;
-  $: canResetCurrentAttempt = Boolean(session && !loadingPuzzle && !submittingMove);
-  $: boardInteractive = Boolean(session && session.status === "active" && !loadingPuzzle && !submittingMove);
+  $: canResetCurrentAttempt = Boolean(session && !loadingPuzzle && !submittingMove && !restartingAttempt);
+  $: boardInteractive = Boolean(
+    session && session.status === "active" && session.attemptId && !loadingPuzzle && !submittingMove && !restartingAttempt,
+  );
   $: puzzleTitle = formatPuzzleName(session?.coolId);
   $: statusTone = errorMessage ? "error" : infoMessage ? "info" : hintMessage ? "hint" : "muted";
   $: statusText = errorMessage || infoMessage || hintMessage || "ready";

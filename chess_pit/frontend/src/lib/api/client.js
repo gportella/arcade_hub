@@ -218,6 +218,14 @@ export async function submitPuzzleMove(coolId, { attemptId, move }, token) {
     return handleResponse(response);
 }
 
+export async function restartPuzzleAttempt(coolId, token) {
+    const response = await fetch(`${API_BASE}/puzzles/${coolId}/restart`, {
+        method: "POST",
+        headers: buildJsonHeaders(token),
+    });
+    return handleResponse(response);
+}
+
 export function composeWebSocketUrl(base, path) {
     const baseUrl = new URL(base);
     const baseSegments = baseUrl.pathname

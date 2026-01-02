@@ -175,6 +175,32 @@ def _load_any_puzzle_from_csv(
     return None
 
 
+def _build_session_response(puzzle: Puzzle, attempt: PuzzleAttempt) -> PuzzleSessionResponse:
+    board = chess.Board(puzzle.fen)
+    initial_turn_white = board.turn == chess.WHITE
+    solution_moves = [move.lower() for move in puzzle.solution_moves if move]
+    remaining_moves = _remaining_player_moves(
+        solution_moves,
+        played_count=len(attempt.submitted_moves),
+        initial_turn_white=initial_turn_white,
+    )
+    current_points = max(0, _MAX_POINTS - attempt.hint_count)
+    return PuzzleSessionResponse(
+        attempt_id=attempt.id,
+        cool_id=puzzle.cool_id,
+        fen=puzzle.fen,
+        difficulty=puzzle.difficulty,
+        hint_available=bool(solution_moves),
+        max_points=_MAX_POINTS,
+        current_points=current_points,
+        times_presented=puzzle.presented_count,
+        times_solved=puzzle.solve_count,
+        side_to_move="white" if initial_turn_white else "black",
+        remaining_moves=remaining_moves,
+        correct_moves=solution_moves,
+    )
+
+
 @router.get("/random", response_model=PuzzleSessionResponse)
 async def fetch_random_puzzle(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -187,29 +213,18 @@ async def fetch_random_puzzle(
     puzzle = _ensure_puzzle(puzzle)
 
     attempt = create_attempt(session, puzzle=puzzle, user=current_user)
-    current_points = max(0, _MAX_POINTS - attempt.hint_count)
-    board = chess.Board(puzzle.fen)
-    side_to_move = "white" if board.turn == chess.WHITE else "black"
-    solution_moves = [move.lower() for move in puzzle.solution_moves if move]
-    remaining_moves = _remaining_player_moves(
-        solution_moves,
-        played_count=0,
-        initial_turn_white=board.turn == chess.WHITE,
-    )
-    return PuzzleSessionResponse(
-        attempt_id=attempt.id,
-        cool_id=puzzle.cool_id,
-        fen=puzzle.fen,
-        difficulty=puzzle.difficulty,
-        hint_available=bool(puzzle.solution_moves),
-        max_points=_MAX_POINTS,
-        current_points=current_points,
-        times_presented=puzzle.presented_count,
-        times_solved=puzzle.solve_count,
-        side_to_move=side_to_move,
-        remaining_moves=remaining_moves,
-        correct_moves=puzzle.solution_moves,
-    )
+    return _build_session_response(puzzle, attempt)
+
+
+@router.post("/{cool_id}/restart", response_model=PuzzleSessionResponse, status_code=status.HTTP_201_CREATED)
+async def restart_puzzle_attempt(
+    cool_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> PuzzleSessionResponse:
+    puzzle = _ensure_puzzle(get_puzzle_by_cool_id(session, cool_id))
+    attempt = create_attempt(session, puzzle=puzzle, user=current_user)
+    return _build_session_response(puzzle, attempt)
 
 
 @router.post("/{cool_id}/hint", response_model=PuzzleHintResponse)

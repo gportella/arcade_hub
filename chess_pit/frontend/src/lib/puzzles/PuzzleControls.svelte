@@ -55,7 +55,7 @@
       type="button"
       class="primary"
       on:click={() => dispatch("submit")}
-      disabled={!hasPendingMove || submitLoading || disableActions}
+      disabled={!hasPendingMove || submitLoading || disableActions || attemptFinished}
     >
       {#if submitLoading}
         {$t("puzzles.controls.submitting")}
@@ -77,7 +77,7 @@
       type="button"
       class="hint"
       on:click={() => dispatch("hint")}
-      disabled={!hintAvailable || hintLoading || hintUsed || disableActions}
+      disabled={!hintAvailable || hintLoading || hintUsed || disableActions || attemptFinished}
     >
       {#if hintLoading}
         {$t("puzzles.controls.hintLoading")}
@@ -92,7 +92,7 @@
       type="button"
       class="preview"
       on:click={() => dispatch("preview")}
-      disabled={!previewAvailable || submitLoading || disableActions}
+      disabled={!previewAvailable || submitLoading || disableActions || attemptFinished}
     >
       {#if previewActive}
         {$t("puzzles.controls.hideLine")}
@@ -107,14 +107,24 @@
   {/if}
 
   {#if attemptFinished}
-    <button
-      type="button"
-      class="next"
-      on:click={() => dispatch("next")}
-      disabled={loadingPuzzle}
-    >
-      {$t("puzzles.controls.nextPuzzle")}
-    </button>
+    <div class="controls__row controls__row--complete">
+      <button
+        type="button"
+        class="ghost retry"
+        on:click={() => dispatch("retry")}
+        disabled={disableActions}
+      >
+        {$t("puzzles.controls.retryPuzzle")}
+      </button>
+      <button
+        type="button"
+        class="next"
+        on:click={() => dispatch("next")}
+        disabled={loadingPuzzle}
+      >
+        {$t("puzzles.controls.nextPuzzle")}
+      </button>
+    </div>
   {/if}
 </section>
 
@@ -199,6 +209,14 @@
     align-self: flex-start;
     background: linear-gradient(130deg, #22c55e, #16a34a);
     color: #fff;
+  }
+
+  .retry {
+    flex: 1 1 auto;
+  }
+
+  .controls__row--complete {
+    justify-content: flex-start;
   }
 
   .pending {

@@ -236,3 +236,56 @@ async def test_puzzle_multi_move_with_auto_reply(client, engine):
         json={"attempt_id": attempt_id, "move": "f2f4"},
     )
     assert repeat_submit.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_puzzle_restart_creates_new_attempt(client, engine):
+    headers = await _register_and_login(client, "puzzle_retry", "StrongPass123")
+
+    with Session(engine) as session:
+        puzzle = Puzzle(
+            cool_id="retry-lesson-001",
+            fen=DEFAULT_START_FEN,
+            difficulty=PuzzleDifficulty.easy,
+            source="test-suite",
+            hint=None,
+            solution_moves=["e2e4"],
+        )
+        session.add(puzzle)
+        session.commit()
+
+    random_response = await client.get(
+        "/puzzles/random",
+        headers=headers,
+        params={"difficulty": PuzzleDifficulty.easy.value},
+    )
+    assert random_response.status_code == 200
+    initial_payload = random_response.json()
+    first_attempt_id = initial_payload["attempt_id"]
+    cool_id = initial_payload["cool_id"]
+
+    fail_response = await client.post(
+        f"/puzzles/{cool_id}/submit",
+        headers=headers,
+        json={"attempt_id": first_attempt_id, "move": "d2d4"},
+    )
+    assert fail_response.status_code == 200
+    assert fail_response.json()["status"] == "failed"
+
+    restart_response = await client.post(
+        f"/puzzles/{cool_id}/restart",
+        headers=headers,
+    )
+    assert restart_response.status_code == 201
+    restart_payload = restart_response.json()
+    assert restart_payload["cool_id"] == cool_id
+    assert restart_payload["remaining_moves"] == 1
+    assert restart_payload["attempt_id"] != first_attempt_id
+
+    retry_submit = await client.post(
+        f"/puzzles/{cool_id}/submit",
+        headers=headers,
+        json={"attempt_id": restart_payload["attempt_id"], "move": "e2e4"},
+    )
+    assert retry_submit.status_code == 200
+    assert retry_submit.json()["status"] == "solved"

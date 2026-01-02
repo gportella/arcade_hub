@@ -9,6 +9,7 @@
   import PuzzleHistory from "../puzzles/PuzzleHistory.svelte";
   import {
     fetchRandomPuzzle,
+    restartPuzzleAttempt,
     requestPuzzleHint,
     submitPuzzleMove,
   } from "../api/client";
@@ -242,6 +243,7 @@
   let boardInteractive = false;
   let lastSubmittedUci = "";
   let celebrationActive = false;
+  let canResetCurrentAttempt = false;
 
   const formatPuzzleName = (value) => {
     if (!value) return "Puzzle";
@@ -454,6 +456,49 @@
     }
   };
 
+  const restartCurrentPuzzle = async () => {
+    if (!session || !token || loadingPuzzle) return;
+
+    clearAutoAdvance();
+    loadingPuzzle = true;
+    submittingMove = false;
+    hintLoading = false;
+    resetTransientState();
+    celebrationActive = false;
+
+    const translator = get(t);
+
+    try {
+      const payload = await restartPuzzleAttempt(session.coolId, token);
+      const resolvedDifficulty = payload?.difficulty ?? session.difficulty ?? selectedDifficulty;
+      session = buildSessionFromPayload(payload, resolvedDifficulty);
+      if (typeof payload.total_user_points === "number") {
+        totalPoints = payload.total_user_points;
+      }
+      selectedDifficulty = resolvedDifficulty;
+
+      game.reset();
+      if (session.baseFen) {
+        try {
+          game.load(session.baseFen);
+        } catch (_error) {
+          game.reset();
+        }
+      }
+
+      session.currentFen = normalizeFen(game.fen()) ?? game.fen();
+      syncBoardToSession({ forceReset: true });
+      infoMessage = "";
+      errorMessage = "";
+    } catch (error) {
+      const message = error instanceof Error ? error.message : translator("puzzles.error.load");
+      errorMessage = message;
+      syncBoardToSession({ forceReset: true });
+    } finally {
+      loadingPuzzle = false;
+    }
+  };
+
   const handleSubmissionResponse = (payload) => {
     if (!session) return;
 
@@ -631,10 +676,10 @@
     }
   };
 
-  const handleResetMove = () => {
+  const handleResetMove = async () => {
     if (!session) return;
     if (session.status !== "active") {
-      syncBoardToSession({ forceReset: true });
+      await restartCurrentPuzzle();
       return;
     }
     const boardState = playMoves(session.baseFen, session.submitted);
@@ -648,6 +693,10 @@
     infoMessage = "";
     errorMessage = "";
     hintMessage = "";
+  };
+
+  const handleRetryPuzzle = async () => {
+    await restartCurrentPuzzle();
   };
 
   const handleNextPuzzle = () => {
@@ -698,6 +747,9 @@
   $: timesSolved = session?.stats?.solved ?? 0;
   $: hintCount = session?.hintCount ?? 0;
   $: attemptFinished = session ? session.status !== "active" : false;
+  $: canResetCurrentAttempt = Boolean(
+    session && (attemptFinished || hasSubmittedMoves() || Boolean(pendingMoveLabel)),
+  );
   $: boardInteractive = Boolean(session && session.status === "active" && !loadingPuzzle && !submittingMove);
   $: puzzleTitle = formatPuzzleName(session?.coolId);
   $: statusTone = errorMessage ? "error" : infoMessage ? "info" : hintMessage ? "hint" : "muted";
@@ -780,16 +832,17 @@
         hintAvailable={Boolean(session?.status === "active" && session?.hintAvailable)}
         hintUsed={(session?.hintCount ?? 0) > 0}
         hasPendingMove={Boolean(pendingMoveLabel)}
-        canResetMove={hasSubmittedMoves()}
+        canResetMove={canResetCurrentAttempt}
         previewAvailable={false}
         previewActive={false}
         attemptFinished={attemptFinished}
         pendingMoveLabel={pendingMoveLabel}
-        disableActions={loadingPuzzle || submittingMove || attemptFinished}
+        disableActions={loadingPuzzle || submittingMove}
         on:difficulty={handleDifficultyChange}
         on:refresh={() => void loadPuzzle({ difficulty: selectedDifficulty })}
         on:submit={() => {}}
-        on:resetMove={handleResetMove}
+        on:resetMove={() => void handleResetMove()}
+        on:retry={() => void handleRetryPuzzle()}
         on:hint={handleHint}
         on:preview={() => {}}
         on:next={() => handleNextPuzzle()}

@@ -15,7 +15,14 @@ export class WorldBuilder {
             if (this.blocked.has(key)) return;
             const pos = this.toXY(col, row);
             const rect = this.scene.add.rectangle(pos.x, pos.y, this.grid.size, this.grid.size, c || color).setOrigin(0);
+            rect.setDepth(-200);
             this.scene.physics.add.existing(rect, true); // static
+            const body = rect.body;
+            if (body) {
+                body.setSize(this.grid.size, this.grid.size, false);
+                body.setOffset(0, 0);
+                body.updateFromGameObject?.();
+            }
             this.obstacles.push(rect);
             this.blocked.add(key);
         };
@@ -62,4 +69,5 @@ export class WorldBuilder {
     isBlocked(col, row) { return this.blocked.has(`${col},${row}`); }
     toXY(col, row) { return { x: this.grid.ox + col * this.grid.size, y: this.grid.oy + row * this.grid.size }; }
     getObstacleObjects() { return this.obstacles; }
+
 }

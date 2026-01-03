@@ -9,6 +9,7 @@ const baseConfig = {
     type: AUTO,
     parent: 'game-container',
     backgroundColor: '#2c2f33',
+    pixelArt: true,
     scale: {
         mode: Scale.FIT,                 // fit inside available space while preserving aspect
         autoCenter: Scale.CENTER_BOTH,   // center canvas both horizontally and vertically

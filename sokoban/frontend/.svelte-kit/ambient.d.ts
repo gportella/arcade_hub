@@ -28,12 +28,14 @@
 declare module '$env/static/private' {
 	export const NVM_INC: string;
 	export const MANPATH: string;
+	export const CHESS_DATABASE_URL: string;
 	export const NODE: string;
 	export const SSL_CERT_FILE: string;
 	export const INIT_CWD: string;
 	export const NVM_CD_FLAGS: string;
-	export const TERM: string;
 	export const SHELL: string;
+	export const TERM: string;
+	export const CHESS_CORS_ORIGINS: string;
 	export const HOMEBREW_REPOSITORY: string;
 	export const CURL_CA_BUNDLE: string;
 	export const TMPDIR: string;
@@ -76,6 +78,7 @@ declare module '$env/static/private' {
 	export const PWD: string;
 	export const npm_lifecycle_event: string;
 	export const EDITOR: string;
+	export const CHESS_SECRET_KEY: string;
 	export const KITTY_PID: string;
 	export const npm_package_name: string;
 	export const LANG: string;
@@ -99,11 +102,11 @@ declare module '$env/static/private' {
 	export const LOGNAME: string;
 	export const npm_lifecycle_script: string;
 	export const NVM_COMPLETION: string;
-	export const NVM_BIN: string;
 	export const CONDA_DEFAULT_ENV: string;
+	export const NVM_BIN: string;
 	export const npm_config_user_agent: string;
-	export const KITTY_WINDOW_ID: string;
 	export const KITTY_INSTALLATION_DIR: string;
+	export const KITTY_WINDOW_ID: string;
 	export const INFOPATH: string;
 	export const HOMEBREW_CELLAR: string;
 	export const BAT_THEME: string;
@@ -111,8 +114,8 @@ declare module '$env/static/private' {
 	export const NODE_EXTRA_CA_CERTS: string;
 	export const npm_node_execpath: string;
 	export const npm_config_prefix: string;
-	export const KITTY_PUBLIC_KEY: string;
 	export const COLORTERM: string;
+	export const KITTY_PUBLIC_KEY: string;
 	export const _: string;
 	export const NODE_ENV: string;
 }
@@ -148,12 +151,14 @@ declare module '$env/dynamic/private' {
 	export const env: {
 		NVM_INC: string;
 		MANPATH: string;
+		CHESS_DATABASE_URL: string;
 		NODE: string;
 		SSL_CERT_FILE: string;
 		INIT_CWD: string;
 		NVM_CD_FLAGS: string;
-		TERM: string;
 		SHELL: string;
+		TERM: string;
+		CHESS_CORS_ORIGINS: string;
 		HOMEBREW_REPOSITORY: string;
 		CURL_CA_BUNDLE: string;
 		TMPDIR: string;
@@ -196,6 +201,7 @@ declare module '$env/dynamic/private' {
 		PWD: string;
 		npm_lifecycle_event: string;
 		EDITOR: string;
+		CHESS_SECRET_KEY: string;
 		KITTY_PID: string;
 		npm_package_name: string;
 		LANG: string;
@@ -219,11 +225,11 @@ declare module '$env/dynamic/private' {
 		LOGNAME: string;
 		npm_lifecycle_script: string;
 		NVM_COMPLETION: string;
-		NVM_BIN: string;
 		CONDA_DEFAULT_ENV: string;
+		NVM_BIN: string;
 		npm_config_user_agent: string;
-		KITTY_WINDOW_ID: string;
 		KITTY_INSTALLATION_DIR: string;
+		KITTY_WINDOW_ID: string;
 		INFOPATH: string;
 		HOMEBREW_CELLAR: string;
 		BAT_THEME: string;
@@ -231,8 +237,8 @@ declare module '$env/dynamic/private' {
 		NODE_EXTRA_CA_CERTS: string;
 		npm_node_execpath: string;
 		npm_config_prefix: string;
-		KITTY_PUBLIC_KEY: string;
 		COLORTERM: string;
+		KITTY_PUBLIC_KEY: string;
 		_: string;
 		NODE_ENV: string;
 		[key: `PUBLIC_${string}`]: undefined;

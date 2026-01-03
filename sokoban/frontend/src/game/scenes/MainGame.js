@@ -29,6 +29,68 @@ import { getDefaultLevelId, getLevelById, getLevelProgress, getNextLevelId, getP
 
 const STORAGE_KEY = "sokoban.currentLevel";
 
+const PLAYER_FRAME_SIZE = 64;
+const PLAYER_FRAMES_PER_DIRECTION = 9;
+const PLAYER_DIRECTION_ROW_INDEX = new Map([
+    ["down", 0],
+    ["left", 1],
+    ["right", 2],
+    ["up", 3]
+]);
+const PLAYER_DIRECTIONS = Array.from(PLAYER_DIRECTION_ROW_INDEX.keys());
+
+const PLAYER_LAST_VARIANT_KEY = "player.soldier.lastVariant";
+
+const PLAYER_VARIANTS = [
+    {
+        id: "orange_monk",
+        layers: [
+            "BODY_male.png",
+            "LEGS_robe_skirt.png",
+            "TORSO_robe_shirt_brown.png",
+            "BELT_rope.png",
+            "FEET_shoes_brown.png",
+            "HEAD_robe_hood.png"
+        ]
+    },
+    {
+        id: "skeleton_plain",
+        layers: [
+            "BODY_skeleton.png"
+        ]
+    },
+    {
+        id: "skeleton_armored",
+        layers: [
+            "BODY_skeleton.png",
+            "FEET_plate_armor_shoes.png",
+            "LEGS_plate_armor_pants.png",
+            "TORSO_plate_armor_torso.png",
+            "TORSO_plate_armor_arms_shoulders.png",
+            "HANDS_plate_armor_gloves.png",
+            "HEAD_plate_armor_helmet.png"
+        ]
+    }
+];
+
+function sanitizeLayerKey(fileName) {
+    return `lpc_${fileName.replace(/[^a-zA-Z0-9]+/g, "_").toLowerCase()}`;
+}
+
+const PLAYER_LAYER_LIBRARY = (() => {
+    const unique = new Map();
+    PLAYER_VARIANTS.forEach(variant => {
+        variant.layers.forEach(file => {
+            if (!unique.has(file)) {
+                unique.set(file, sanitizeLayerKey(file));
+            }
+        });
+    });
+    return Array.from(unique.entries()).map(([file, key]) => ({ file, key }));
+})();
+
+const PLAYER_LAYER_MAP = new Map(PLAYER_LAYER_LIBRARY.map(({ file, key }) => [file, key]));
+
 function readStoredLevelId() {
     if (typeof window === "undefined") return null;
     try {
@@ -53,17 +115,23 @@ export class MainGame extends Scene {
 
     init(data) {
         this.requestedLevelId = data && typeof data.levelId === "string" ? data.levelId : null;
+        this.playerVariantId = null;
+        this.playerVariantLayers = null;
     }
 
     preload() {
-        const playerAsset = new URL("../assets/face_sprite.png", import.meta.url).href;
-        this.load.image("emmaSprite", playerAsset);
+        this.preloadPlayerAssets();
     }
 
     create() {
         const storedId = readStoredLevelId();
         const initialId = this.requestedLevelId || storedId || getDefaultLevelId();
         this.requestedLevelId = null;
+
+        const playerVariant = this.selectPlayerVariant();
+        this.playerVariantId = playerVariant.id;
+        this.playerVariantLayers = [...playerVariant.layers];
+        this.ensurePlayerAssetsReady(playerVariant);
 
         /** @type {LevelConfig} */
         const level = getLevelById(initialId);
@@ -97,7 +165,7 @@ export class MainGame extends Scene {
         this.moveTarget = null;
         this.cancelCommitThreshold = 0.15; // commit move even when key tap is brief
         this.pointerCode = "__pointer__";
-        this.playerTextureKey = "emmaSprite";
+        this.playerFacing = "down";
 
         this.grid = {
             size,
@@ -117,14 +185,18 @@ export class MainGame extends Scene {
         // g.generateTexture("boxTexture", size, size);
         // g.destroy();
 
-        this.box = this.add.image(0, 0, this.playerTextureKey).setOrigin(0).setInteractive({ useHandCursor: true });
-        this.box.setDisplaySize(this.grid.size, this.grid.size); // match grid cell size
-        this.physics.add.existing(this.box);
+        this.box = this.physics.add.sprite(0, 0, this.getSoldierFrameKey(this.playerFacing, 0, this.playerVariantId))
+            .setOrigin(0, 0)
+            .setInteractive({ useHandCursor: true })
+            .setDepth(500);
+        this.box.setDisplaySize(this.grid.size, this.grid.size);
         const boxBody = this.getBoxBody();
         boxBody.setCollideWorldBounds(true);
         boxBody.setSize(this.grid.size, this.grid.size, false);
+        boxBody.setOffset(0, 0);
         boxBody.setBounce(0);
         boxBody.setImmovable(false);
+        this.playIdleAnimation();
 
         const worldConfig = {
             contour: level.contour !== undefined ? level.contour : true,
@@ -145,7 +217,7 @@ export class MainGame extends Scene {
         this.targets = new TargetManager(this, this.grid, targetCells);
         this.winText = this.add.text(this.scale.width / 2, 24, "Well done!", { fontFamily: "Arial", fontSize: "32px", color: "#ffffff" })
             .setOrigin(0.5, 0)
-            .setDepth(100)
+            .setDepth(600)
             .setVisible(false);
 
         const pushableCells = level.pushables || [];
@@ -425,6 +497,7 @@ export class MainGame extends Scene {
         this.currentDirectionCode = null;
         this.pendingDirection = null;
         this.cancelRequested = false;
+        this.playIdleAnimation();
     }
 
     handleKeyDown(code, dx, dy) {
@@ -502,6 +575,9 @@ export class MainGame extends Scene {
         this.currentDirectionCode = code || null;
         this.cancelRequested = false;
 
+        this.updatePlayerFacing(dx, dy);
+        this.playWalkAnimation();
+
         this.activePush = pushPlan || null;
         if (pushPlan) {
             pushPlan.box.moveToCell(pushPlan.to.col, pushPlan.to.row, this.moveSpeed, () => {
@@ -552,6 +628,7 @@ export class MainGame extends Scene {
     finishMove(interrupted) {
         const body = this.getBoxBody();
         body.setVelocity(0, 0);
+        this.playIdleAnimation();
         this.moveTarget = null;
         this.moveStart = null;
         this.moveDirection = null;
@@ -669,6 +746,54 @@ export class MainGame extends Scene {
         return { col: Math.min(Math.max(col, 0), maxCol), row: Math.min(Math.max(row, 0), maxRow) };
     }
 
+    updatePlayerFacing(dx, dy) {
+        const direction = this.vectorToDirection(dx, dy);
+        if (direction) {
+            this.playerFacing = direction;
+        }
+    }
+
+    vectorToDirection(dx, dy) {
+        if (!dx && !dy) return null;
+        if (Math.abs(dx) > Math.abs(dy)) {
+            return dx > 0 ? "right" : "left";
+        }
+        if (Math.abs(dy) > 0) {
+            return dy > 0 ? "down" : "up";
+        }
+        return null;
+    }
+
+    playWalkAnimation() {
+        if (!this.box || !this.box.anims || !this.playerVariantId) return;
+        const key = this.getWalkAnimationKey(this.playerFacing || "down", this.playerVariantId);
+        if (!this.anims.exists(key)) return;
+        if (this.box.anims.currentAnim?.key !== key) {
+            this.box.anims.play(key, true);
+        }
+    }
+
+    playIdleAnimation() {
+        if (!this.box || !this.box.anims || !this.playerVariantId) return;
+        const key = this.getIdleAnimationKey(this.playerFacing || "down", this.playerVariantId);
+        if (!this.anims.exists(key)) return;
+        if (this.box.anims.currentAnim?.key !== key) {
+            this.box.anims.play(key, true);
+        }
+    }
+
+    getSoldierFrameKey(direction, index, variantId = this.playerVariantId || "default") {
+        return `soldier_${variantId}_${direction}_${index}`;
+    }
+
+    getWalkAnimationKey(direction, variantId = this.playerVariantId || "default") {
+        return `soldier-${variantId}-walk-${direction}`;
+    }
+
+    getIdleAnimationKey(direction, variantId = this.playerVariantId || "default") {
+        return `soldier-${variantId}-idle-${direction}`;
+    }
+
     handleSwipe(state, pointer) {
         if (!state) return;
         const upX = pointer ? pointer.worldX : state.x;
@@ -695,6 +820,108 @@ export class MainGame extends Scene {
         if (dirX || dirY) {
             this.tryMove(dirX, dirY, this.pointerCode);
         }
+    }
+
+    selectPlayerVariant() {
+        if (!PLAYER_VARIANTS.length) {
+            throw new Error("No player variants configured");
+        }
+        const lastId = this.registry.get(PLAYER_LAST_VARIANT_KEY) || null;
+        if (PLAYER_VARIANTS.length === 1) {
+            const only = PLAYER_VARIANTS[0];
+            this.registry.set(PLAYER_LAST_VARIANT_KEY, only.id);
+            return only;
+        }
+
+        let chosen = null;
+        let attempt = 0;
+        while (!chosen && attempt < 8) {
+            const candidate = PLAYER_VARIANTS[Math.floor(Math.random() * PLAYER_VARIANTS.length)];
+            if (!lastId || candidate.id !== lastId || attempt >= 3) {
+                chosen = candidate;
+            }
+            attempt++;
+        }
+
+        if (!chosen) {
+            chosen = PLAYER_VARIANTS[0];
+        }
+
+        this.registry.set(PLAYER_LAST_VARIANT_KEY, chosen.id);
+        return chosen;
+    }
+
+    preloadPlayerAssets() {
+        const basePath = "../assets/figures/lpc_entry/png/walkcycle";
+        PLAYER_LAYER_LIBRARY.forEach(spec => {
+            if (this.textures.exists(spec.key)) return;
+            const url = new URL(`${basePath}/${spec.file}`, import.meta.url).href;
+            this.load.spritesheet(spec.key, url, { frameWidth: PLAYER_FRAME_SIZE, frameHeight: PLAYER_FRAME_SIZE });
+        });
+    }
+
+    ensurePlayerAssetsReady(variant) {
+        const layerKeys = variant.layers.map(file => {
+            const key = PLAYER_LAYER_MAP.get(file);
+            if (!key) {
+                console.warn(`No texture mapping registered for layer file ${file}`);
+            }
+            return key;
+        }).filter(Boolean);
+
+        const missingTexture = layerKeys.find(layerKey => !this.textures.exists(layerKey));
+        if (missingTexture) {
+            console.warn(`Player layer texture missing: ${missingTexture}`);
+            return;
+        }
+
+        PLAYER_DIRECTIONS.forEach((direction, dirIndex) => {
+            const rowIndex = PLAYER_DIRECTION_ROW_INDEX.get(direction) ?? dirIndex;
+            for (let frameIndex = 0; frameIndex < PLAYER_FRAMES_PER_DIRECTION; frameIndex++) {
+                const compositeKey = this.getSoldierFrameKey(direction, frameIndex, variant.id);
+                if (this.textures.exists(compositeKey)) {
+                    this.textures.remove(compositeKey);
+                }
+
+                const renderTexture = this.make.renderTexture({ width: PLAYER_FRAME_SIZE, height: PLAYER_FRAME_SIZE, add: false }, false);
+                layerKeys.forEach(layerKey => {
+                    const frameNumber = rowIndex * PLAYER_FRAMES_PER_DIRECTION + frameIndex;
+                    renderTexture.drawFrame(layerKey, frameNumber, 0, 0);
+                });
+                renderTexture.saveTexture(compositeKey);
+                renderTexture.destroy();
+            }
+
+            const walkKey = this.getWalkAnimationKey(direction, variant.id);
+            if (this.anims.exists(walkKey)) {
+                this.anims.remove(walkKey);
+            }
+            this.anims.create({
+                key: walkKey,
+                frames: this.buildSoldierAnimationFrames(direction, variant.id),
+                frameRate: 10,
+                repeat: -1
+            });
+
+            const idleKey = this.getIdleAnimationKey(direction, variant.id);
+            if (this.anims.exists(idleKey)) {
+                this.anims.remove(idleKey);
+            }
+            this.anims.create({
+                key: idleKey,
+                frames: [{ key: this.getSoldierFrameKey(direction, 0, variant.id) }],
+                frameRate: 1,
+                repeat: -1
+            });
+        });
+    }
+
+    buildSoldierAnimationFrames(direction, variantId = this.playerVariantId) {
+        const frames = [];
+        for (let frameIndex = 1; frameIndex < PLAYER_FRAMES_PER_DIRECTION; frameIndex++) {
+            frames.push({ key: this.getSoldierFrameKey(direction, frameIndex, variantId) });
+        }
+        return frames;
     }
 }
 

@@ -18,7 +18,7 @@ export class PushableBox {
         g.generateTexture(textureKey, size, size);
         g.destroy();
 
-        this.sprite = scene.add.image(0, 0, textureKey).setOrigin(0);
+        this.sprite = scene.add.image(0, 0, textureKey).setOrigin(0).setDepth(300);
         this.setCell(startCell.col, startCell.row);
     }
 

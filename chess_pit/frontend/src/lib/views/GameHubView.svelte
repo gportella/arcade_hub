@@ -656,7 +656,7 @@
         {#if showNewGameForm}
             <form class="new-game" on:submit|preventDefault={onLaunchGame}>
                 <div class="new-game-grid">
-                    <section class="field-stack compact-card">
+                    <section class="field-stack">
                         <div class="inline-fields">
                             <div class="field-block fill">
                                 <label for="opponent">{opponentLabel}</label>
@@ -680,12 +680,82 @@
                                         </option>
                                     {/each}
                                 </select>
-                                <p class="hint">{depthHelp}</p>
-                                {#if depthHint}
-                                    <p class="hint muted">{depthHint}</p>
-                                {/if}
+                            </div>
+                            <div class="field-block color-pick">
+                                <label for="color-choice">{colorLabelText}</label>
+                                <select
+                                    id="color-choice"
+                                    bind:value={newGameColor}
+                                    on:change={(event) =>
+                                        onChangeColor(
+                                            /** @type {HTMLSelectElement} */ (event.currentTarget).value,
+                                        )
+                                    }
+                                >
+                                    <option value="white">{colorWhite}</option>
+                                    <option value="black">{colorBlack}</option>
+                                </select>
                             </div>
                         </div>
+                        {#if isEngineChallenge}
+                            <fieldset class="engine-mode">
+                                <legend>{engineModeLabel}</legend>
+                                <p class="hint">{engineModeHelp}</p>
+                                <div class="mode-toggle" role="radiogroup" aria-label={engineModeLabel}>
+                                    <label
+                                        class="mode-pill"
+                                        class:active={engineModeValue === ENGINE_MODE_TIME}
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="engine-mode"
+                                            value={ENGINE_MODE_TIME}
+                                            checked={engineModeValue === ENGINE_MODE_TIME}
+                                            on:change={() => onChangeEngineMode(ENGINE_MODE_TIME)}
+                                        />
+                                        <span>{engineModeTimeLabel}</span>
+                                    </label>
+                                    <label
+                                        class="mode-pill"
+                                        class:active={engineModeValue === ENGINE_MODE_DEPTH}
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="engine-mode"
+                                            value={ENGINE_MODE_DEPTH}
+                                            checked={engineModeValue === ENGINE_MODE_DEPTH}
+                                            on:change={() => onChangeEngineMode(ENGINE_MODE_DEPTH)}
+                                        />
+                                        <span>{engineModeDepthLabel}</span>
+                                    </label>
+                                </div>
+                                {#if engineUsesDepth}
+                                    <div class="depth-field">
+                                        <label for="engine-depth">{depthLabel}</label>
+                                        <input
+                                            id="engine-depth"
+                                            type="number"
+                                            min="1"
+                                            max="64"
+                                            step="1"
+                                            value={newGameDepth}
+                                            placeholder={depthPlaceholder}
+                                            on:input={(event) =>
+                                                onChangeDepth(
+                                                    /** @type {HTMLInputElement} */ (
+                                                        event.currentTarget
+                                                    ).value,
+                                                )
+                                            }
+                                        />
+                                        <p class="hint">{depthHelp}</p>
+                                        {#if depthHint}
+                                            <p class="hint muted">{depthHint}</p>
+                                        {/if}
+                                    </div>
+                                {/if}
+                            </fieldset>
+                        {/if}
                         {#if showTimeControls}
                             <fieldset class="time-card">
                                 <legend>{timeInitialLabel}</legend>
@@ -997,13 +1067,13 @@
         flex-direction: column;
         gap: 1.5rem;
         margin: 0 auto;
-        padding: 1rem 1.5rem 2rem;
+        padding: 0.85rem 1.2rem 2rem;
     }
 
     @media (min-width: 1200px) {
         .hub {
             max-width: 1280px;
-            padding-inline: 2.5rem;
+            padding-inline: 2.3rem;
         }
     }
 
@@ -1112,7 +1182,7 @@
         border-radius: 0.75rem;
         padding: 0.95rem 1.2rem 1.3rem 1.05rem;
         min-height: 3.6rem;
-        flex: 1 1 170px;
+        flex: 1 1 180px;
         max-width: 220px;
         display: flex;
         flex-direction: column;
@@ -1178,6 +1248,12 @@
         border-radius: 1rem;
     }
 
+    @media (max-width: 540px) {
+        .panel {
+            padding: 1.25rem;
+        }
+    }
+
     .panel-header {
         display: flex;
         align-items: center;
@@ -1215,22 +1291,6 @@
         gap: 1rem;
     }
 
-    .field-stack.compact-card {
-        background: rgba(12, 18, 35, 0.65);
-        border: 1px solid rgba(59, 130, 246, 0.18);
-        border-radius: 1rem;
-        padding: 1.1rem;
-        box-shadow: 0 12px 24px rgba(8, 23, 48, 0.35);
-    }
-
-    .field-stack.emphasis {
-        background: linear-gradient(160deg, rgba(22, 30, 51, 0.85), rgba(30, 64, 175, 0.25));
-        border: 1px solid rgba(94, 234, 212, 0.08);
-        border-radius: 1.1rem;
-        padding: 1.25rem;
-        box-shadow: 0 18px 36px rgba(15, 23, 42, 0.4);
-    }
-
     .field-block,
     .depth-field {
         display: grid;
@@ -1246,14 +1306,15 @@
         gap: 0.4rem;
     }
 
-    @media (min-width: 620px) {
+    @media (min-width: 660px) {
         .inline-fields {
-            grid-template-columns: minmax(0, 1fr) minmax(0, 160px);
+            grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
             align-items: start;
         }
 
-        .inline-fields .color-pick select {
-            min-width: 140px;
+        .inline-fields .color-pick select,
+        .inline-fields .color-pick {
+            min-width: 0;
         }
     }
 
@@ -1270,8 +1331,8 @@
     .depth-field input {
         width: 100%;
         border-radius: 0.75rem;
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: rgba(8, 15, 35, 0.75);
+        border: 1px solid rgba(148, 163, 184, 0.32);
+        background: rgba(8, 15, 35, 0.6);
         color: #e2e8f0;
         padding: 0.45rem 0.65rem;
         font-size: 0.9rem;
@@ -1303,12 +1364,12 @@
 
     .engine-mode {
         margin: 0;
-        padding: 0.75rem 1rem;
-        border-radius: 1rem;
-        border: 1px solid rgba(59, 130, 246, 0.12);
-        background: rgba(12, 20, 45, 0.7);
+        padding: 0.85rem 1rem;
+        border-radius: 0.85rem;
+        border: 1px solid rgba(59, 130, 246, 0.18);
+        background: transparent;
         display: grid;
-        gap: 0.5rem;
+        gap: 0.6rem;
     }
 
     .engine-mode legend {
@@ -1326,8 +1387,8 @@
 
     .mode-pill {
         position: relative;
-        background: rgba(30, 64, 175, 0.18);
-        border: 1px solid transparent;
+        background: rgba(30, 64, 175, 0.12);
+        border: 1px solid rgba(96, 165, 250, 0.12);
         color: #dbeafe;
         border-radius: 999px;
         display: inline-flex;
@@ -1362,10 +1423,10 @@
     }
 
     .mode-pill.active {
-        background: rgba(37, 99, 235, 0.92);
+        background: rgba(37, 99, 235, 0.85);
         color: #f8fafc;
-        border-color: rgba(148, 197, 255, 0.8);
-        box-shadow: 0 8px 18px rgba(37, 99, 235, 0.3);
+        border-color: rgba(148, 197, 255, 0.65);
+        box-shadow: 0 6px 14px rgba(37, 99, 235, 0.28);
     }
 
     .mode-pill:focus-visible {
@@ -1375,13 +1436,13 @@
 
     .time-card {
         margin: 0;
-        padding: 1rem 1.15rem;
-        border-radius: 1rem;
-        border: 1px solid rgba(94, 234, 212, 0.14);
-        background: linear-gradient(160deg, rgba(10, 19, 41, 0.9), rgba(15, 118, 110, 0.26));
+        padding: 0.85rem 1rem;
+        border-radius: 0.85rem;
+        border: 1px solid rgba(94, 234, 212, 0.18);
+        background: transparent;
         display: grid;
-        gap: 0.75rem;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 16px 32px rgba(8, 35, 68, 0.35);
+        gap: 0.65rem;
+        box-shadow: none;
     }
 
     .time-card legend {

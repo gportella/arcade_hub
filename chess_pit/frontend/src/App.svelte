@@ -371,6 +371,9 @@
     if (clamped === null) {
       return null;
     }
+    if (clamped <= 0) {
+      return null;
+    }
     return clamped * 60;
   }
 
@@ -1200,11 +1203,16 @@
       newGameInitialMinutes = "";
       return;
     }
+    const numeric = Number.parseInt(cleaned, 10);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      newGameInitialMinutes = "";
+      return;
+    }
     const clamped = clampIntegerValue(cleaned, {
-      min: 0,
+      min: 1,
       max: MAX_INITIAL_MINUTES,
     });
-    newGameInitialMinutes = clamped !== null ? String(clamped) : cleaned;
+    newGameInitialMinutes = clamped !== null ? String(clamped) : "";
   };
 
   const handleIncrementSecondsChange = (value) => {

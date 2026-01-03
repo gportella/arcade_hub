@@ -59,9 +59,9 @@ class Settings(BaseSettings):
             ),
             EngineSpec(
                 key="skaks",
-                name="Skaks 0.13",
+                name="Skaks 0.7",
                 binary="skaks",
-                default_depth=8,
+                default_depth=6,
                 max_depth=10,
             ),
         ],

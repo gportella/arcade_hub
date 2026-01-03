@@ -86,6 +86,7 @@
     $: engineModeHelp = $t("hub.form.engineModeHelp");
     $: timeMinutesSuffix = $t("play.clock.minutesSuffix");
     $: timeSecondsSuffix = $t("play.clock.secondsSuffix");
+    $: timeUntimedLabel = $t("play.clock.unlimited");
     $: archiveHeading = $t("hub.groups.archive");
     $: ongoingHeading = $t("hub.groups.ongoing");
     $: undatedGroupLabel = $t("hub.groups.undated");
@@ -706,7 +707,11 @@
                                     <label for="initial-time-range">
                                         <span>{timeInitialLabel}</span>
                                         <span class="slider-value">
-                                            {sliderInitialMinutes ?? 0} {timeMinutesSuffix}
+                                            {#if sliderInitialMinutes !== null}
+                                                {sliderInitialMinutes} {timeMinutesSuffix}
+                                            {:else}
+                                                {timeUntimedLabel}
+                                            {/if}
                                         </span>
                                     </label>
                                     <input

@@ -290,6 +290,11 @@ async def create_new_game(
     engine_depth = game_in.engine_depth
     initial_time = game_in.initial_time_seconds
     increment_time = game_in.increment_seconds
+    if initial_time is not None and initial_time <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Initial time must be greater than zero seconds or omitted for untimed games.",
+        )
     engine_player: User | None = None
     if white_player.is_engine:
         engine_player = white_player

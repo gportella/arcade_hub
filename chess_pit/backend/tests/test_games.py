@@ -101,6 +101,29 @@ async def test_create_game_and_record_moves(client):
 
 
 @pytest.mark.asyncio
+async def test_create_game_rejects_zero_initial_time(client):
+    white = await _register_user(client, "timed_white")
+    black = await _register_user(client, "timed_black")
+
+    token = await _login(client, "timed_white", "StrongPass123")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = await client.post(
+        "/games",
+        json={
+            "white_player_id": white["id"],
+            "black_player_id": black["id"],
+            "initial_time_seconds": 0,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    payload = response.json()
+    assert "Initial time" in payload.get("detail", "")
+
+
+@pytest.mark.asyncio
 async def test_player_can_resign(client):
     white = await _register_user(client, "white_contender")
     black = await _register_user(client, "black_contender")

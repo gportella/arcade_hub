@@ -222,8 +222,16 @@ def _update_ratings(
     white_player: User | None,
     black_player: User | None,
     result: GameResult,
+    game: Game | None = None,
 ) -> None:
+    white_delta = 0
+    black_delta = 0
+
     if white_player is None or black_player is None:
+        if game is not None:
+            game.white_rating_delta = 0
+            game.black_rating_delta = 0
+            session.add(game)
         session.commit()
         return
 
@@ -249,14 +257,22 @@ def _update_ratings(
             expected_white = _expected_score(white_rating, black_rating)
             white_delta = round(k_factor_engine * (white_score - expected_white))
             white_player.rating = max(100, white_rating + white_delta)
+        else:
+            white_delta = 0
         if not black_player.is_engine:
             black_score = _score_for_result("black", result)
             expected_black = _expected_score(black_rating, white_rating)
             black_delta = round(k_factor_engine * (black_score - expected_black))
             black_player.rating = max(100, black_rating + black_delta)
+        else:
+            black_delta = 0
 
     session.add(white_player)
     session.add(black_player)
+    if game is not None:
+        game.white_rating_delta = white_delta
+        game.black_rating_delta = black_delta
+        session.add(game)
     session.commit()
 
 
@@ -929,7 +945,7 @@ def _finalize_game(
     white_player = game.white_player
     black_player = game.black_player
 
-    _update_ratings(session, white_player, black_player, result)
+    _update_ratings(session, white_player, black_player, result, game)
 
     is_draw = result == GameResult.draw
     white_won = result == GameResult.white

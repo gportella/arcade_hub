@@ -140,6 +140,14 @@ class Game(SQLModel, table=True):  # type: ignore[call-arg]
         default=None,
         sa_column=Column(DateTime(timezone=False), nullable=True),
     )
+    white_rating_delta: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default="0"),
+    )
+    black_rating_delta: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default="0"),
+    )
 
     white_player: "User" = Relationship(
         sa_relationship=relationship(

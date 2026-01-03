@@ -150,6 +150,8 @@ class GameRead(BaseModel):
     white_time_remaining_seconds: Optional[int]
     black_time_remaining_seconds: Optional[int]
     turn_start_time: Optional[datetime]
+    white_rating_delta: int = Field(default=0)
+    black_rating_delta: int = Field(default=0)
 
     class Config:
         from_attributes = True
@@ -209,11 +211,9 @@ class HubGameSummary(BaseModel):
     white_time_remaining_seconds: Optional[int]
     black_time_remaining_seconds: Optional[int]
     turn_start_time: Optional[datetime]
-    time_control_initial_seconds: Optional[int]
-    time_control_increment_seconds: Optional[int]
-    white_time_remaining_seconds: Optional[int]
-    black_time_remaining_seconds: Optional[int]
-    turn_start_time: Optional[datetime]
+    white_rating_delta: int = Field(default=0)
+    black_rating_delta: int = Field(default=0)
+    your_rating_delta: int = Field(default=0)
 
 
 class HubResponse(BaseModel):

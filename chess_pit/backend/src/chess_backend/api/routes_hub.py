@@ -70,6 +70,9 @@ def _make_game_summary(game: Game, current_user: User, settings: Settings) -> Hu
     last_updated = game.last_move_at or game.started_at
     your_color = "white" if game.white_player_id == current_user.id else "black"
     turn = active_color(game.current_fen or game.initial_fen)
+    white_delta = getattr(game, "white_rating_delta", 0) or 0
+    black_delta = getattr(game, "black_rating_delta", 0) or 0
+    your_rating_delta = white_delta if your_color == "white" else black_delta
     if game.id is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -96,6 +99,9 @@ def _make_game_summary(game: Game, current_user: User, settings: Settings) -> Hu
         white_time_remaining_seconds=game.white_time_remaining_seconds,
         black_time_remaining_seconds=game.black_time_remaining_seconds,
         turn_start_time=game.turn_start_time,
+        white_rating_delta=white_delta,
+        black_rating_delta=black_delta,
+        your_rating_delta=your_rating_delta,
     )
 
 

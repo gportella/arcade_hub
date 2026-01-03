@@ -2,6 +2,7 @@
     import { onMount } from "svelte";
     import HubLeaderboard from "../components/HubLeaderboard.svelte";
     import { locale, t } from "../i18n";
+    import { calculateTrophies } from "../utils/trophies";
     /** @type {{ id: string; nickname: string; avatar: string; rating?: number | null } | null} */
     export let user = null;
     /** @type {Array<any>} */
@@ -97,6 +98,7 @@
     $: leaderboardRankLabel = $t("hub.leaderboard.rank");
     $: leaderboardPlayerLabel = $t("hub.leaderboard.player");
     $: leaderboardRatingLabel = $t("hub.leaderboard.rating");
+    $: leaderboardTrophiesLabel = $t("hub.leaderboard.trophies");
     $: leaderboardRecordLabel = $t("hub.leaderboard.record");
     $: leaderboardWinRateLabel = $t("hub.leaderboard.winRate");
     $: leaderboardPuzzlesLabel = $t("hub.leaderboard.puzzles");
@@ -289,23 +291,41 @@
         return formatTime(entry?.last_activity_at || entry?.last_game_at || null);
     };
 
+    $: trophyNoneLabel = $t("profile.trophies.none");
+
     $: rankedEntries = Array.isArray(leaderboard)
         ? leaderboard.map((entry, index) => ({ ...entry, rank: index + 1 }))
         : [];
     $: userRankEntry = rankedEntries.find((entry) => String(entry.id) === String(user?.id)) ?? null;
     $: hubLeaderboard = rankedEntries.slice(0, 5);
-    $: hubLeaderboardRows = hubLeaderboard.map((entry) => ({
-        id: entry.id,
-        rank: entry.rank,
-        username: entry.username,
-        avatar: entry.avatar_url || "",
-        ratingText: ratingDisplay(entry.rating) ?? "—",
-        recordText: formatRecord(entry),
-        winRateText: formatWinRate(entry.games_won, entry.games_played),
-        puzzlesText: formatPuzzleSummary(entry),
-        activityText: formatActivity(entry) || "—",
-        highlight: String(entry.id) === String(user?.id),
-    }));
+    $: hubLeaderboardRows = hubLeaderboard.map((entry) => {
+        const trophyData = calculateTrophies(entry?.games_won, 4);
+        const hasTrophies = trophyData.cups.length > 0;
+        const trophySummary = hasTrophies
+            ? $t("profile.trophies.summary", {
+                  gold: trophyData.counts.gold,
+                  silver: trophyData.counts.silver,
+                  bronze: trophyData.counts.bronze,
+                  represented: trophyData.representedWins,
+                  wins: trophyData.sourceWins,
+              })
+            : trophyNoneLabel;
+        return {
+            id: entry.id,
+            rank: entry.rank,
+            username: entry.username,
+            avatar: entry.avatar_url || "",
+            ratingText: ratingDisplay(entry.rating) ?? "—",
+            recordText: formatRecord(entry),
+            winRateText: formatWinRate(entry.games_won, entry.games_played),
+            puzzlesText: formatPuzzleSummary(entry),
+            activityText: formatActivity(entry) || "—",
+            trophyWins: trophyData.sourceWins,
+            trophySummary,
+            hasTrophies,
+            highlight: String(entry.id) === String(user?.id),
+        };
+    });
     $: leaderboardFootnote =
         userRankEntry && userRankEntry.rank > hubLeaderboard.length
             ? $t("hub.leaderboard.yourRank", {
@@ -552,6 +572,7 @@
                     class="action-menu"
                     id="hub-action-menu"
                     role="menu"
+                    tabindex="-1"
                     on:keydown={handleMenuKeydown}
                     bind:this={actionMenuRef}
                 >
@@ -582,6 +603,8 @@
             rankLabel={leaderboardRankLabel}
             playerLabel={leaderboardPlayerLabel}
             ratingLabel={leaderboardRatingLabel}
+            trophyLabel={leaderboardTrophiesLabel}
+            trophyEmptyLabel={trophyNoneLabel}
             recordLabel={leaderboardRecordLabel}
             winRateLabel={leaderboardWinRateLabel}
             puzzlesLabel={leaderboardPuzzlesLabel}

@@ -388,7 +388,13 @@
     });
   }
 
-  function ensureTimeDefaults() {
+  function ensureTimeDefaults(options = {}) {
+    const allowUntimed = Boolean(options.allowUntimed);
+    if (allowUntimed) {
+      newGameInitialMinutes = "";
+      newGameIncrementSeconds = "";
+      return;
+    }
     if (!newGameInitialMinutes) {
       newGameInitialMinutes = String(DEFAULT_TIME_MINUTES);
     }
@@ -401,7 +407,7 @@
     const opponent = findOpponentById(opponentId);
     if (!opponent) {
       newGameEngineMode = ENGINE_MODE_TIME;
-      ensureTimeDefaults();
+      ensureTimeDefaults({ allowUntimed: true });
       newGameDepth = "";
       return;
     }
@@ -423,7 +429,9 @@
       return;
     }
     newGameEngineMode = ENGINE_MODE_TIME;
-    ensureTimeDefaults();
+    if (forceReset) {
+      ensureTimeDefaults({ allowUntimed: true });
+    }
     newGameDepth = "";
   }
 
@@ -545,6 +553,10 @@
     const fen = summary.current_fen || summary.initial_fen;
     const lastUpdated = summary.last_updated || summary.started_at;
     const summaryText = summary.summary?.trim() ?? "";
+    const normalizeDelta = (value) =>
+      typeof value === "number" && Number.isFinite(value) ? Math.round(value) : 0;
+    const whiteRatingDelta = normalizeDelta(summary.white_rating_delta);
+    const blackRatingDelta = normalizeDelta(summary.black_rating_delta);
     const initialSeconds =
       typeof summary.time_control_initial_seconds === "number" &&
       Number.isFinite(summary.time_control_initial_seconds)
@@ -566,6 +578,13 @@
         ? summary.black_time_remaining_seconds
         : null;
     const turnStartTime = summary.turn_start_time ?? null;
+    const yourColor = summary.your_color || "white";
+    const ratingDelta =
+      typeof summary.your_rating_delta === "number" && Number.isFinite(summary.your_rating_delta)
+        ? Math.round(summary.your_rating_delta)
+        : yourColor === "white"
+        ? whiteRatingDelta
+        : blackRatingDelta;
     return {
       id: summary.id,
       opponent,
@@ -577,7 +596,7 @@
       fen,
       initialFen: summary.initial_fen,
       pgn: summary.pgn,
-      yourColor: summary.your_color,
+      yourColor,
       turn: summary.turn || parseActiveColor(fen),
       lastUpdated,
       startedAt: summary.started_at,
@@ -589,6 +608,9 @@
       whiteTimeRemainingSeconds: whiteRemaining,
       blackTimeRemainingSeconds: blackRemaining,
       turnStartTime,
+      whiteRatingDelta,
+      blackRatingDelta,
+      ratingDelta,
     };
   }
 
@@ -626,6 +648,15 @@
         ? detail.black_time_remaining_seconds
         : summaryUi?.blackTimeRemainingSeconds ?? null;
     const turnStartTime = detail.turn_start_time ?? summaryUi?.turnStartTime ?? null;
+    const normalizeDelta = (value) =>
+      typeof value === "number" && Number.isFinite(value) ? Math.round(value) : 0;
+    const whiteRatingDelta = normalizeDelta(
+      detail.white_rating_delta ?? summaryUi?.whiteRatingDelta ?? summaryRaw?.white_rating_delta,
+    );
+    const blackRatingDelta = normalizeDelta(
+      detail.black_rating_delta ?? summaryUi?.blackRatingDelta ?? summaryRaw?.black_rating_delta,
+    );
+    const ratingDelta = yourColor === "white" ? whiteRatingDelta : blackRatingDelta;
     return {
       id: detail.id,
       opponent,
@@ -655,6 +686,9 @@
       whiteTimeRemainingSeconds: whiteRemaining,
       blackTimeRemainingSeconds: blackRemaining,
       turnStartTime,
+      whiteRatingDelta,
+      blackRatingDelta,
+      ratingDelta,
     };
   }
 

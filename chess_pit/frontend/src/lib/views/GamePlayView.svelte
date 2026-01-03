@@ -10,6 +10,7 @@
     onDestroy(() => console.debug(`[${stamp()}] [destroy] ChessBoard`));
     import ChessBoard from "../ChessBoard.svelte";
     import GameAnalysisViewer from "../GameAnalysisViewer.svelte";
+    import GameVictoryBadge from "../games/GameVictoryBadge.svelte";
     import { evaluationToWdl, toPercentage } from "../utils/evaluation";
     import { createClockStore, formatClock as formatClockDisplay } from "../stores/clocks";
 
@@ -35,6 +36,8 @@
 
     const analysisMissingValue = "-";
     const clock = createClockStore();
+    const SILVER_DELTA_THRESHOLD = 15;
+    const BRONZE_DELTA_THRESHOLD = 1;
 
     const isCriticalClock = (value) =>
         typeof value === "number" && Number.isFinite(value) && value <= 10;
@@ -299,6 +302,74 @@
         }
         return "";
     })();
+    $: engineKeyLower = (game?.opponent?.engineKey || "").toLowerCase();
+    $: engineDepth = typeof game?.engineDepth === "number" && Number.isFinite(game.engineDepth)
+        ? Math.round(game.engineDepth)
+        : null;
+    $: ratingDelta = typeof game?.ratingDelta === "number" && Number.isFinite(game.ratingDelta)
+        ? Math.round(game.ratingDelta)
+        : 0;
+    $: playerWon = Boolean(
+        game &&
+            game.status === "completed" &&
+            ((game.result === "white" && game.yourColor === "white") ||
+                (game.result === "black" && game.yourColor === "black")),
+    );
+    $: qualifiesGold = Boolean(
+        playerWon &&
+            game?.opponent?.isEngine &&
+            engineDepth !== null &&
+            engineDepth >= 6 &&
+            (engineKeyLower === "skaks" || engineKeyLower === "stockfish"),
+    );
+    $: rawVictoryReward = (() => {
+        if (!playerWon) {
+            return null;
+        }
+        if (qualifiesGold) {
+            return {
+                level: "gold",
+                engineName: game?.opponent?.nickname || "",
+                engineDepth,
+            };
+        }
+        if (ratingDelta >= SILVER_DELTA_THRESHOLD) {
+            return {
+                level: "silver",
+                ratingDelta,
+            };
+        }
+        if (ratingDelta >= BRONZE_DELTA_THRESHOLD) {
+            return {
+                level: "bronze",
+                ratingDelta,
+            };
+        }
+        return null;
+    })();
+    $: victoryReward = rawVictoryReward
+        ? {
+              level: rawVictoryReward.level,
+              title: $t(`play.reward.title.${rawVictoryReward.level}`),
+              subtitle:
+                  rawVictoryReward.level === "gold"
+                      ? (() => {
+                            const engineName = rawVictoryReward.engineName?.trim();
+                            if (engineName) {
+                                return $t("play.reward.reason.engine", {
+                                    engine: engineName,
+                                    depth: rawVictoryReward.engineDepth ?? 0,
+                                });
+                            }
+                            return $t("play.reward.reason.engineFallback", {
+                                depth: rawVictoryReward.engineDepth ?? 0,
+                            });
+                        })()
+                      : $t("play.reward.reason.rating", {
+                            delta: Math.abs(rawVictoryReward.ratingDelta ?? 0),
+                        }),
+          }
+        : null;
     $: analysisRunLabel = isAnalysisLoading
         ? $t("analysis.running")
         : $t("analysis.button", {
@@ -778,6 +849,14 @@
             </section>
 
             <section class="game-info">
+            {#if victoryReward}
+                <GameVictoryBadge
+                    level={victoryReward.level}
+                    title={victoryReward.title}
+                    subtitle={victoryReward.subtitle}
+                    celebrating={victoryReward.level === "gold"}
+                />
+            {/if}
             {#if analysisSectionVisible}
                 <div class="info-card analysis-card">
                     <div class="analysis-top">

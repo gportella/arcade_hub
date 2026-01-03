@@ -1,4 +1,6 @@
 <script>
+    import TrophyDisplay from "./TrophyDisplay.svelte";
+
     /** @typedef {{
      *   id: string | number,
      *   rank: number,
@@ -9,6 +11,9 @@
      *   winRateText: string,
      *   puzzlesText: string,
      *   activityText: string,
+     *   trophyWins: number,
+     *   trophySummary: string,
+     *   hasTrophies: boolean,
      *   highlight: boolean
      * }} LeaderboardRow */
 
@@ -30,6 +35,10 @@
     export let puzzlesLabel = "";
     /** @type {string} */
     export let lastActiveLabel = "";
+    /** @type {string} */
+    export let trophyLabel = "";
+    /** @type {string} */
+    export let trophyEmptyLabel = "";
     /** @type {Array<LeaderboardRow>} */
     export let rows = [];
     /** @type {boolean} */
@@ -40,6 +49,8 @@
     export let loadingLabel = "";
     /** @type {string} */
     export let footnote = "";
+
+    $: showTrophyColumn = Boolean(trophyLabel);
 </script>
 
 <section class="hub-leaderboard glass-panel">
@@ -56,6 +67,9 @@
                     <col class="col-rank" />
                     <col class="col-player" />
                     <col class="col-rating" />
+                    {#if showTrophyColumn}
+                        <col class="col-trophies" />
+                    {/if}
                     <col class="col-record" />
                     <col class="col-win" />
                     <col class="col-puzzles" />
@@ -66,6 +80,9 @@
                         <th scope="col" class="numeric">{rankLabel}</th>
                         <th scope="col">{playerLabel}</th>
                         <th scope="col" class="numeric">{ratingLabel}</th>
+                        {#if showTrophyColumn}
+                            <th scope="col" class="trophies-header">{trophyLabel}</th>
+                        {/if}
                         <th scope="col" class="numeric">{recordLabel}</th>
                         <th scope="col" class="numeric">{winRateLabel}</th>
                         <th scope="col" class="numeric">{puzzlesLabel}</th>
@@ -83,6 +100,22 @@
                                 </div>
                             </th>
                             <td class="numeric">{entry.ratingText}</td>
+                            {#if showTrophyColumn}
+                                <td class="trophies-cell">
+                                    {#if entry.hasTrophies}
+                                        <TrophyDisplay
+                                            wins={entry.trophyWins}
+                                            summary={entry.trophySummary}
+                                            title={trophyLabel}
+                                            emptyLabel={trophyEmptyLabel}
+                                            size={16}
+                                            className="trophies-inline"
+                                        />
+                                    {:else}
+                                        <span class="trophies-placeholder" aria-label={entry.trophySummary || trophyEmptyLabel}>—</span>
+                                    {/if}
+                                </td>
+                            {/if}
                             <td class="numeric">{entry.recordText}</td>
                             <td class="numeric">{entry.winRateText}</td>
                             <td class="numeric">{entry.puzzlesText}</td>
@@ -174,6 +207,27 @@
         border: 1px solid rgba(148, 163, 184, 0.25);
         flex-shrink: 0;
         background: rgba(148, 163, 184, 0.16);
+    }
+
+    .trophies-header {
+        text-align: center;
+    }
+
+    .trophies-cell {
+        text-align: center;
+    }
+
+    .trophies-placeholder {
+        display: inline-block;
+        color: rgba(148, 163, 184, 0.65);
+    }
+
+    :global(.trophies-inline) {
+        --cup-size: 16px;
+    }
+
+    .col-trophies {
+        width: 7.5rem;
     }
 
     .leaderboard-footnote {

@@ -17,7 +17,7 @@
   const markerRadius = 1.1;
 
   const dispatch = createEventDispatcher();
-  let svgRef;
+  let chartRef;
   let pointerActive = false;
 
   const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -37,7 +37,48 @@
     return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
   };
 
-  const prepareSteps = (input) => {
+      <div
+        class="chart-container"
+        role="slider"
+        aria-label={ariaLabel}
+        aria-valuemin="0"
+        aria-valuemax={Math.max(prepared.length - 1, 0)}
+        aria-valuenow={clampedIndex ?? 0}
+        aria-valuetext={markerSummary || markerLabel}
+        tabindex="0"
+        on:pointerdown={handlePointerDown}
+        on:pointermove={handlePointerMove}
+        on:pointerup={handlePointerUp}
+        on:pointerleave={handlePointerLeave}
+        on:pointercancel={handlePointerLeave}
+        on:click={handleClick}
+        on:keydown={handleKeydown}
+        bind:this={chartRef}
+      >
+        <svg
+          class="chart"
+          viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+          preserveAspectRatio="xMidYMid meet"
+          role="presentation"
+          focusable="false"
+        >
+          {#if whitePath}
+            <path class="area white" d={whitePath} />
+          {/if}
+          {#if drawPath}
+            <path class="area draw" d={drawPath} />
+          {/if}
+          {#if blackPath}
+            <path class="area black" d={blackPath} />
+          {/if}
+          {#if markerPoint && markerX !== null && markerY !== null}
+            <g class="marker" transform={`translate(${markerX} 0)`}>
+              <line class="marker-line" x1="0" y1="0" x2="0" y2={chartHeight} />
+              <circle class="marker-dot" cy={markerY} r={markerRadius} />
+            </g>
+          {/if}
+        </svg>
+      </div>
     if (!Array.isArray(input) || !input.length) {
       return [];
     }
@@ -68,47 +109,71 @@
         label: step?.label ?? step?.title ?? "",
         ply: step?.ply ?? index + 1,
         whitePercent: Number.isFinite(step?.whitePercent)
-          ? step.whitePercent
-          : white * 100,
-        drawPercent: Number.isFinite(step?.drawPercent)
-          ? step.drawPercent
-          : draw * 100,
-        blackPercent: Number.isFinite(step?.blackPercent)
-          ? step.blackPercent
-          : black * 100,
-      };
+          .chart-container {
+            width: 100%;
+            aspect-ratio: 100 / 16;
+            background: rgba(15, 23, 42, 0.42);
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            cursor: pointer;
+            display: block;
+            position: relative;
+          }
+
+          .chart {
+            width: 100%;
+            height: 100%;
+          }
+
+          .chart-container:focus-visible {
+            outline: 2px solid rgba(59, 130, 246, 0.8);
+            outline-offset: 2px;
+          }
     });
   };
-
-  const buildAreaPath = (points, topAccessor, bottomAccessor) => {
-    if (!points.length) {
-      return "";
-    }
-    const topPoints = points.map((point) => [point.x, topAccessor(point)]);
-    const bottomPoints = [];
-    for (let i = points.length - 1; i >= 0; i -= 1) {
-      bottomPoints.push([points[i].x, bottomAccessor(points[i])]);
-    }
-    const lastTop = topPoints[topPoints.length - 1];
-    if (lastTop[0] !== chartWidth) {
-      const anchor = points[points.length - 1];
-      const extraTop = [chartWidth, topAccessor(anchor)];
-      const extraBottom = [chartWidth, bottomAccessor(anchor)];
-      topPoints.push(extraTop);
-      bottomPoints.unshift(extraBottom);
-    }
-    if (topPoints[0][0] !== 0) {
-      const anchor = points[0];
-      const extraTop = [0, topAccessor(anchor)];
-      const extraBottom = [0, bottomAccessor(anchor)];
-      topPoints.unshift(extraTop);
-      bottomPoints.push(extraBottom);
-    }
-    const commands = [];
-    const start = topPoints[0];
-    commands.push(`M ${start[0].toFixed(2)} ${start[1].toFixed(2)}`);
-    for (let i = 1; i < topPoints.length; i += 1) {
-      const [x, y] = topPoints[i];
+                <div
+                  class="chart-container"
+                  role="slider"
+                  aria-label={ariaLabel}
+                  aria-valuemin="0"
+                  aria-valuemax={Math.max(prepared.length - 1, 0)}
+                  aria-valuenow={clampedIndex ?? 0}
+                  aria-valuetext={markerSummary || markerLabel}
+                  tabindex="0"
+                  on:pointerdown={handlePointerDown}
+                  on:pointermove={handlePointerMove}
+                  on:pointerup={handlePointerUp}
+                  on:pointerleave={handlePointerLeave}
+                  on:pointercancel={handlePointerLeave}
+                  on:click={handleClick}
+                  on:keydown={handleKeydown}
+                  bind:this={chartRef}
+                >
+                  <svg
+                    class="chart"
+                    viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                    preserveAspectRatio="xMidYMid meet"
+                    role="presentation"
+                    focusable="false"
+                  >
+                    {#if whitePath}
+                      <path class="area white" d={whitePath} />
+                    {/if}
+                    {#if drawPath}
+                      <path class="area draw" d={drawPath} />
+                    {/if}
+                    {#if blackPath}
+                      <path class="area black" d={blackPath} />
+                    {/if}
+                    {#if markerPoint && markerX !== null && markerY !== null}
+                      <g class="marker" transform={`translate(${markerX} 0)`}>
+                        <line class="marker-line" x1="0" y1="0" x2="0" y2={chartHeight} />
+                        <circle class="marker-dot" cy={markerY} r={markerRadius} />
+                      </g>
+                    {/if}
+                  </svg>
+                </div>
       commands.push(`L ${x.toFixed(2)} ${y.toFixed(2)}`);
     }
     for (let i = 0; i < bottomPoints.length; i += 1) {
@@ -132,10 +197,10 @@
   };
 
   const eventToIndex = (event) => {
-    if (!svgRef || !prepared.length) {
+    if (!chartRef || !prepared.length) {
       return null;
     }
-    const rect = svgRef.getBoundingClientRect();
+    const rect = chartRef.getBoundingClientRect();
     if (!rect.width) {
       return null;
     }
@@ -155,17 +220,27 @@
   const commitFromEvent = (event) => {
     const index = eventToIndex(event);
     if (index === null) {
-      return;
-    }
-    commitIndex(index);
-  };
+        .chart-container {
+          width: 100%;
+          aspect-ratio: 100 / 16;
+          background: rgba(15, 23, 42, 0.42);
+          border-radius: 8px;
+          overflow: hidden;
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          cursor: pointer;
+          display: block;
+          position: relative;
+        }
 
-  const handlePointerDown = (event) => {
-    pointerActive = true;
-    svgRef?.setPointerCapture?.(event.pointerId);
-    commitFromEvent(event);
-  };
+        .chart {
+          width: 100%;
+          height: 100%;
+        }
 
+        .chart-container:focus-visible {
+          outline: 2px solid rgba(59, 130, 246, 0.8);
+          outline-offset: 2px;
+        }
   const handlePointerMove = (event) => {
     if (!pointerActive) {
       return;
@@ -179,7 +254,7 @@
       return;
     }
     pointerActive = false;
-    svgRef?.releasePointerCapture?.(event.pointerId);
+    chartRef?.releasePointerCapture?.(event.pointerId);
     commitFromEvent(event);
   };
 
@@ -188,11 +263,43 @@
       return;
     }
     pointerActive = false;
-    svgRef?.releasePointerCapture?.(event.pointerId);
+    chartRef?.releasePointerCapture?.(event.pointerId);
   };
 
   const handleClick = (event) => {
     commitFromEvent(event);
+  };
+
+  const handleKeydown = (event) => {
+    if (!prepared.length) {
+      return;
+    }
+    const maxIndex = Math.max(prepared.length - 1, 0);
+    const current = clampedIndex ?? 0;
+    let next = current;
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowDown":
+        event.preventDefault();
+        next = Math.max(0, current - 1);
+        break;
+      case "ArrowRight":
+      case "ArrowUp":
+        event.preventDefault();
+        next = Math.min(maxIndex, current + 1);
+        break;
+      case "Home":
+        event.preventDefault();
+        next = 0;
+        break;
+      case "End":
+        event.preventDefault();
+        next = maxIndex;
+        break;
+      default:
+        return;
+    }
+    commitIndex(next);
   };
 
   $: prepared = prepareSteps(steps);
@@ -244,36 +351,48 @@
     {#if labels.timeline || labels.heading}
       <p class="heading">{labels.timeline || labels.heading}</p>
     {/if}
-    <svg
-      class="chart"
-      bind:this={svgRef}
-      viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-      role="img"
+    <div
+      class="chart-container"
+      role="slider"
       aria-label={ariaLabel}
-      preserveAspectRatio="xMidYMid meet"
+      aria-valuemin="0"
+      aria-valuemax={Math.max(prepared.length - 1, 0)}
+      aria-valuenow={clampedIndex ?? 0}
+      aria-valuetext={markerSummary || markerLabel}
+      tabindex="0"
       on:pointerdown={handlePointerDown}
       on:pointermove={handlePointerMove}
       on:pointerup={handlePointerUp}
       on:pointerleave={handlePointerLeave}
       on:pointercancel={handlePointerLeave}
       on:click={handleClick}
+      on:keydown={handleKeydown}
+      bind:this={chartRef}
     >
-      {#if whitePath}
-        <path class="area white" d={whitePath} />
-      {/if}
-      {#if drawPath}
-        <path class="area draw" d={drawPath} />
-      {/if}
-      {#if blackPath}
-        <path class="area black" d={blackPath} />
-      {/if}
-      {#if markerPoint && markerX !== null && markerY !== null}
-        <g class="marker" transform={`translate(${markerX} 0)`}>
-          <line class="marker-line" x1="0" y1="0" x2="0" y2={chartHeight} />
-          <circle class="marker-dot" cy={markerY} r={markerRadius} />
-        </g>
-      {/if}
-    </svg>
+      <svg
+        class="chart"
+        viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+        preserveAspectRatio="xMidYMid meet"
+        role="presentation"
+        focusable="false"
+      >
+        {#if whitePath}
+          <path class="area white" d={whitePath} />
+        {/if}
+        {#if drawPath}
+          <path class="area draw" d={drawPath} />
+        {/if}
+        {#if blackPath}
+          <path class="area black" d={blackPath} />
+        {/if}
+        {#if markerPoint && markerX !== null && markerY !== null}
+          <g class="marker" transform={`translate(${markerX} 0)`}>
+            <line class="marker-line" x1="0" y1="0" x2="0" y2={chartHeight} />
+            <circle class="marker-dot" cy={markerY} r={markerRadius} />
+          </g>
+        {/if}
+      </svg>
+    </div>
     <div class="marker-label" aria-hidden="true">
       <span class="label">{markerLabel}</span>
       {#if markerPoint}
@@ -310,7 +429,7 @@
     color: rgba(148, 163, 184, 0.78);
   }
 
-  .chart {
+  .chart-container {
     width: 100%;
     aspect-ratio: 100 / 16;
     background: rgba(15, 23, 42, 0.42);
@@ -318,7 +437,19 @@
     overflow: hidden;
     border: 1px solid rgba(148, 163, 184, 0.1);
     cursor: pointer;
+    display: block;
+    position: relative;
     touch-action: none;
+  }
+
+  .chart {
+    width: 100%;
+    height: 100%;
+  }
+
+  .chart-container:focus-visible {
+    outline: 2px solid rgba(59, 130, 246, 0.8);
+    outline-offset: 2px;
   }
 
   .area {

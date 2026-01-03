@@ -6,6 +6,7 @@
   import PuzzleScoreCard from "../puzzles/PuzzleScoreCard.svelte";
   import PuzzleControls from "../puzzles/PuzzleControls.svelte";
   import PuzzleHistory from "../puzzles/PuzzleHistory.svelte";
+  import PuzzleRewards from "../puzzles/PuzzleRewards.svelte";
   import PuzzleTrainerHeader from "../puzzles/PuzzleTrainerHeader.svelte";
   import PuzzleMetaPanel from "../puzzles/PuzzleMetaPanel.svelte";
   import PuzzleBoardPanel from "../puzzles/PuzzleBoardPanel.svelte";
@@ -996,6 +997,12 @@
     />
 
     <aside class="sidebar">
+      <PuzzleRewards
+        celebrating={celebrationActive}
+        currentPoints={currentPoints}
+        timesSolved={timesSolved}
+      />
+
       <PuzzleScoreCard
         coolId={session?.coolId ?? ""}
         difficulty={session?.difficulty ?? selectedDifficulty}

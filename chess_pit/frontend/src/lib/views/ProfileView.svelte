@@ -1,5 +1,7 @@
 <script>
     import { t } from "../i18n";
+    import TrophyDisplay from "../components/TrophyDisplay.svelte";
+    import { calculateTrophies } from "../utils/trophies";
     /**
      * @type {{ username: string; avatar_url?: string | null; games_won: number; games_lost: number; games_drawn: number } | null}
      */
@@ -44,6 +46,20 @@
         value: ratingValue(user?.rating) ?? "—",
     });
 
+    $: trophiesLabel = $t("profile.trophies.label");
+    $: trophiesNoneLabel = $t("profile.trophies.none");
+    $: userTrophyData = calculateTrophies(user?.games_won, 4);
+    $: userHasTrophies = userTrophyData.cups.length > 0;
+    $: userTrophySummary = userHasTrophies
+        ? $t("profile.trophies.summary", {
+              gold: userTrophyData.counts.gold,
+              silver: userTrophyData.counts.silver,
+              bronze: userTrophyData.counts.bronze,
+              represented: userTrophyData.representedWins,
+              wins: userTrophyData.sourceWins,
+          })
+        : trophiesNoneLabel;
+
     const safeNumber = (value) => (Number.isFinite(value) ? Number(value) : 0);
 
     const formatRecord = (entry) => {
@@ -73,6 +89,7 @@
     $: leaderboardRankLabel = $t("profile.leaderboard.rank");
     $: leaderboardPlayerLabel = $t("profile.leaderboard.player");
     $: leaderboardRatingLabel = $t("profile.leaderboard.rating");
+    $: leaderboardTrophiesLabel = $t("profile.leaderboard.trophies");
     $: leaderboardRecordLabel = $t("profile.leaderboard.record");
     $: leaderboardWinRateLabel = $t("profile.leaderboard.winRate");
     $: leaderboardPuzzlesLabel = $t("profile.leaderboard.puzzles");
@@ -83,7 +100,26 @@
         $t("profile.leaderboard.yourRank", { rank });
 
     $: rankedEntries = Array.isArray(leaderboard)
-        ? leaderboard.map((entry, index) => ({ ...entry, rank: index + 1 }))
+        ? leaderboard.map((entry, index) => {
+              const trophyData = calculateTrophies(entry?.games_won, 4);
+              const hasTrophies = trophyData.cups.length > 0;
+              const trophySummary = hasTrophies
+                  ? $t("profile.trophies.summary", {
+                        gold: trophyData.counts.gold,
+                        silver: trophyData.counts.silver,
+                        bronze: trophyData.counts.bronze,
+                        represented: trophyData.representedWins,
+                        wins: trophyData.sourceWins,
+                    })
+                  : trophiesNoneLabel;
+              return {
+                  ...entry,
+                  rank: index + 1,
+                  trophyData,
+                  trophySummary,
+                  hasTrophies,
+              };
+          })
         : [];
     $: userRankEntry = rankedEntries.find((entry) => String(entry.id) === String(user?.id)) ?? null;
     $: comparisonEntries = (() => {
@@ -125,6 +161,17 @@
                         <li>{drawsLabel}</li>
                         <li>{ratingLabel}</li>
                     </ul>
+                    {#if userHasTrophies}
+                        <div class="trophies-summary">
+                            <span>{trophiesLabel}</span>
+                            <TrophyDisplay
+                                wins={userTrophyData.sourceWins}
+                                summary={userTrophySummary}
+                                title={trophiesLabel}
+                                emptyLabel={trophiesNoneLabel}
+                            />
+                        </div>
+                    {/if}
                 </div>
             </div>
         </section>
@@ -141,6 +188,7 @@
                             <col class="col-rank" />
                             <col class="col-player" />
                             <col class="col-rating" />
+                            <col class="col-trophies" />
                             <col class="col-record" />
                             <col class="col-win" />
                             <col class="col-puzzles" />
@@ -150,6 +198,7 @@
                                 <th scope="col" class="numeric">{leaderboardRankLabel}</th>
                                 <th scope="col">{leaderboardPlayerLabel}</th>
                                 <th scope="col" class="numeric">{leaderboardRatingLabel}</th>
+                                <th scope="col" class="trophies-header">{leaderboardTrophiesLabel}</th>
                                 <th scope="col" class="numeric">{leaderboardRecordLabel}</th>
                                 <th scope="col" class="numeric">{leaderboardWinRateLabel}</th>
                                 <th scope="col" class="numeric">{leaderboardPuzzlesLabel}</th>
@@ -161,6 +210,20 @@
                                     <td class="numeric">{entry.rank}</td>
                                     <th scope="row">{entry.username}</th>
                                     <td class="numeric">{ratingValue(entry.rating) ?? "—"}</td>
+                                    <td class="trophies-cell">
+                                        {#if entry.hasTrophies}
+                                            <TrophyDisplay
+                                                wins={entry.trophyData.sourceWins}
+                                                summary={entry.trophySummary}
+                                                title={trophiesLabel}
+                                                emptyLabel={trophiesNoneLabel}
+                                                size={16}
+                                                className="trophies-inline"
+                                            />
+                                        {:else}
+                                            <span class="trophies-placeholder" aria-label={entry.trophySummary}>—</span>
+                                        {/if}
+                                    </td>
                                     <td class="numeric">{formatRecord(entry)}</td>
                                     <td class="numeric">{formatWinRate(entry)}</td>
                                     <td class="numeric">{formatPuzzleSummary(entry)}</td>
@@ -282,26 +345,10 @@
         overflow-x: auto;
     }
 
-    .profile-leaderboard .leaderboard-player {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .profile-leaderboard .leaderboard-player img {
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        object-fit: cover;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        flex-shrink: 0;
-        background: rgba(148, 163, 184, 0.16);
-    }
-
     .profile-leaderboard table {
         width: 100%;
         border-collapse: collapse;
-        min-width: 520px;
+        min-width: 600px;
     }
 
     .profile-leaderboard th,
@@ -328,6 +375,31 @@
 
     .profile-leaderboard .numeric {
         text-align: right;
+    }
+
+    .profile-leaderboard .col-trophies {
+        width: 120px;
+    }
+
+    .profile-leaderboard .trophies-header {
+        text-align: center;
+    }
+
+    .profile-leaderboard .trophies-cell {
+        text-align: center;
+    }
+
+    .profile-leaderboard .trophies-cell :global(.trophy-display) {
+        justify-content: center;
+    }
+
+    .profile-leaderboard :global(.trophies-inline) {
+        --cup-size: 16px;
+    }
+
+    .profile-leaderboard .trophies-placeholder {
+        display: inline-block;
+        color: rgba(148, 163, 184, 0.65);
     }
 
     .profile-leaderboard tr.selected {
@@ -375,6 +447,20 @@
         color: rgba(226, 232, 240, 0.75);
         display: grid;
         gap: 0.2rem;
+    }
+
+    .trophies-summary {
+        margin-top: 0.6rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        color: rgba(226, 232, 240, 0.85);
+        font-size: 0.9rem;
+    }
+
+    .trophies-summary span {
+        font-weight: 600;
+        color: rgba(226, 232, 240, 0.78);
     }
 
     .profile-form {

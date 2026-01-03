@@ -98,9 +98,9 @@ async def read_leaderboard(
             PuzzleAttempt.user_id,
             func.count(PuzzleAttempt.id).label("attempted"),
             func.coalesce(func.sum(solved_case), 0).label("solved"),
-            func.max(
-                func.coalesce(PuzzleAttempt.completed_at, PuzzleAttempt.started_at)
-            ).label("last_attempt"),
+            func.max(func.coalesce(PuzzleAttempt.completed_at, PuzzleAttempt.started_at)).label(
+                "last_attempt"
+            ),
         )
         .where(PuzzleAttempt.user_id.in_(user_ids))
         .group_by(PuzzleAttempt.user_id)

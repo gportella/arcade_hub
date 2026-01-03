@@ -3,10 +3,12 @@
   import { get } from "svelte/store";
   import { Chess } from "chess.js";
 
-  import ChessBoard from "../ChessBoard.svelte";
   import PuzzleScoreCard from "../puzzles/PuzzleScoreCard.svelte";
   import PuzzleControls from "../puzzles/PuzzleControls.svelte";
   import PuzzleHistory from "../puzzles/PuzzleHistory.svelte";
+  import PuzzleTrainerHeader from "../puzzles/PuzzleTrainerHeader.svelte";
+  import PuzzleMetaPanel from "../puzzles/PuzzleMetaPanel.svelte";
+  import PuzzleBoardPanel from "../puzzles/PuzzleBoardPanel.svelte";
   import {
     fetchRandomPuzzle,
     restartPuzzleAttempt,
@@ -245,6 +247,8 @@
   let celebrationActive = false;
   let restartingAttempt = false;
   let canResetCurrentAttempt = false;
+  const submissionQueue = [];
+  let submissionInFlight = false;
 
   const formatPuzzleName = (value) => {
     if (!value) return "Puzzle";
@@ -304,6 +308,157 @@
     }
   };
 
+  const processSubmissionQueue = () => {
+    if (submissionInFlight) return;
+    if (!submissionQueue.length) {
+      submittingMove = false;
+      return;
+    }
+    if (!token) return;
+
+    submissionInFlight = true;
+    const next = submissionQueue[0];
+
+    submitPuzzleMove(
+      next.coolId,
+      {
+        attemptId: next.attemptId,
+        move: next.uci,
+      },
+      token,
+    )
+      .then((response) => {
+        void handleSubmissionResponse(response);
+      })
+      .catch((error) => {
+        submissionQueue.length = 0;
+        submissionInFlight = false;
+        submittingMove = false;
+        handleSubmissionError(error);
+      })
+      .finally(() => {
+        submissionQueue.shift();
+        submissionInFlight = false;
+        if (submissionQueue.length) {
+          processSubmissionQueue();
+        } else {
+          submittingMove = false;
+        }
+      });
+  };
+
+  const enqueueSubmission = (uci) => {
+    if (!session?.attemptId || !session?.coolId) {
+      return;
+    }
+    submissionQueue.push({
+      uci,
+      attemptId: session.attemptId,
+      coolId: session.coolId,
+    });
+    submittingMove = true;
+    processSubmissionQueue();
+  };
+
+  const applyLocalMoveProgress = (uci, moveDetail) => {
+    if (!session) return;
+
+    const translator = get(t);
+    const normalized = normalizeMove(uci);
+    const submittedBefore = Array.isArray(session.submitted) ? session.submitted : [];
+    const solution = Array.isArray(session.solution) ? session.solution : [];
+    const updatedSubmitted = [...submittedBefore, normalized];
+
+    const pointer = determinePlayerPointer(session);
+    const expectedIndex = Array.isArray(session.playerIndices)
+      ? session.playerIndices[pointer]
+      : undefined;
+
+    let opponentMove = "";
+    if (typeof expectedIndex === "number") {
+      const nextIndex = expectedIndex + 1;
+      if (
+        nextIndex < solution.length &&
+        Array.isArray(session.playerIndices) &&
+        !session.playerIndices.includes(nextIndex)
+      ) {
+        const autoMove = normalizeMove(solution[nextIndex]);
+        if (autoMove) {
+          updatedSubmitted.push(autoMove);
+          opponentMove = autoMove;
+        }
+      }
+    }
+
+    const boardState = playMoves(session.baseFen, updatedSubmitted);
+    const remainingPlayerMoves = computeRemainingPlayerMoves(
+      updatedSubmitted.length,
+      session.playerIndices,
+    );
+    const history = Array.isArray(boardState.history) ? boardState.history : [];
+    const opponentSan = opponentMove ? history.at(-1)?.san ?? opponentMove : "";
+
+    session = {
+      ...session,
+      submitted: updatedSubmitted,
+      currentFen: boardState.fen,
+      remainingPlayerMoves,
+    };
+
+    pendingMoveLabel = "";
+    lastSubmittedUci = normalized;
+    guidanceShapes = [];
+    errorMessage = "";
+    hintMessage = "";
+    syncBoardToSession();
+
+    if (remainingPlayerMoves > 0) {
+      const keepGoing = translator("puzzles.feedback.keepGoing");
+      const opponentMessage = opponentSan
+        ? translator("puzzles.feedback.opponentMove", { move: opponentSan })
+        : "";
+      const remainingLabel = translator("puzzles.feedback.movesRemaining", {
+        count: remainingPlayerMoves,
+        suffix: remainingPlayerMoves === 1 ? "" : "s",
+      });
+      infoMessage = [keepGoing, opponentMessage, remainingLabel]
+        .map((chunk) => chunk?.trim())
+        .filter(Boolean)
+        .join(" ");
+      celebrationActive = false;
+    } else {
+      infoMessage = translator("puzzles.feedback.solved");
+      celebrationActive = true;
+      clearAutoAdvance();
+    }
+  };
+
+  const handleImmediateFailure = (uci) => {
+    if (!session) return;
+
+    const translator = get(t);
+    errorMessage = translator("puzzles.feedback.failed");
+    infoMessage = "";
+    hintMessage = "";
+    guidanceShapes = [];
+    pendingMoveLabel = "";
+    celebrationActive = false;
+
+    const submittedBefore = Array.isArray(session.submitted) ? session.submitted : [];
+    const updatedSubmitted = [...submittedBefore, normalizeMove(uci)];
+
+    session = {
+      ...session,
+      submitted: updatedSubmitted,
+      currentFen: session.baseFen ?? session.currentFen,
+      remainingPlayerMoves: 0,
+      status: "failed",
+    };
+
+    syncBoardToSession({ forceReset: true });
+    clearAutoAdvance();
+  };
+
   const resetTransientState = () => {
     infoMessage = "";
     errorMessage = "";
@@ -311,6 +466,9 @@
     guidanceShapes = [];
     pendingMoveLabel = "";
     lastSubmittedUci = "";
+    submissionQueue.length = 0;
+    submissionInFlight = false;
+    submittingMove = false;
   };
 
   const determinePlayerPointer = (snapshot) => {
@@ -349,10 +507,7 @@
     const submittedSource = Array.isArray(payload.submitted_moves) && payload.submitted_moves.length
       ? payload.submitted_moves
       : session.submitted ?? [];
-    let submitted = normalizeMoveList(submittedSource);
-    if (lastSubmittedUci && !submitted.includes(lastSubmittedUci)) {
-      submitted = [...submitted, lastSubmittedUci];
-    }
+    const submitted = normalizeMoveList(submittedSource);
     const playerIndices = derivePlayerMoveIndices(session.baseFen, solution, session.playerColor);
     const remainingPlayerMoves = typeof payload.remaining_moves === "number"
       ? Math.max(0, payload.remaining_moves)
@@ -363,6 +518,7 @@
 
     session = {
       ...session,
+      attemptId: payload.attempt_id ?? session.attemptId,
       solution,
       submitted,
       playerIndices,
@@ -485,6 +641,9 @@
     const playerMoveSlots = Array.isArray(session.playerIndices) ? session.playerIndices.length : 0;
 
     clearAutoAdvance();
+    submissionQueue.length = 0;
+    submissionInFlight = false;
+    submittingMove = false;
     restartingAttempt = true;
     submittingMove = false;
     hintLoading = false;
@@ -541,10 +700,10 @@
     if (!session) return;
 
     const translator = get(t);
-    const previousStatus = session?.status ?? null;
     applySubmissionPayload(payload);
-    if ((session?.status ?? previousStatus) !== "solved") {
-      syncBoardToSession();
+    if (session) {
+      const forceReset = session.status === "failed";
+      syncBoardToSession({ forceReset });
     }
 
     if (typeof payload.total_user_points === "number") {
@@ -588,7 +747,7 @@
         .join(" ");
     }
 
-    submittingMove = false;
+    submittingMove = submissionQueue.length > 0 || submissionInFlight;
     pendingMoveLabel = "";
     lastSubmittedUci = "";
   };
@@ -597,6 +756,8 @@
     const translator = get(t);
     const message = error instanceof Error ? error.message : translator("puzzles.error.submit");
     errorMessage = message;
+    submissionQueue.length = 0;
+    submissionInFlight = false;
     submittingMove = false;
     pendingMoveLabel = "";
     lastSubmittedUci = "";
@@ -605,7 +766,7 @@
   };
 
   const handleBoardMove = (detail) => {
-    if (!session || session.status !== "active" || submittingMove || loadingPuzzle) {
+    if (!session || session.status !== "active" || restartingAttempt || loadingPuzzle) {
       syncBoardToSession({ forceReset: true });
       return;
     }
@@ -619,14 +780,32 @@
       return;
     }
 
-    submittingMove = true;
+    const expected = expectedMove();
+
+    pendingMoveLabel = moveDetail.san || formatSanForMove(session.baseFen, session.submitted, uci);
     errorMessage = "";
     infoMessage = "";
     hintMessage = "";
     guidanceShapes = [];
-    pendingMoveLabel = moveDetail.san || formatSanForMove(session.baseFen, session.submitted, uci);
-    lastSubmittedUci = uci;
 
+    if (expected && uci !== expected) {
+      handleImmediateFailure(uci);
+      enqueueSubmission(uci);
+      return;
+    }
+
+    if (expected) {
+      enqueueSubmission(uci);
+      applyLocalMoveProgress(uci, moveDetail);
+      return;
+    }
+
+    if ((session?.remainingPlayerMoves ?? 0) === 0) {
+      pendingMoveLabel = "";
+      return;
+    }
+
+    submittingMove = true;
     submitPuzzleMove(
       session.coolId,
       {
@@ -640,11 +819,6 @@
       })
       .catch((error) => {
         handleSubmissionError(error);
-      })
-      .finally(() => {
-        if (!session || session.status !== "active") {
-          guidanceShapes = [];
-        }
       });
   };
 
@@ -777,9 +951,11 @@
   $: attemptFinished = session ? session.status !== "active" : false;
   $: canResetCurrentAttempt = Boolean(session && !loadingPuzzle && !submittingMove && !restartingAttempt);
   $: boardInteractive = Boolean(
-    session && session.status === "active" && session.attemptId && !loadingPuzzle && !submittingMove && !restartingAttempt,
+    session && session.status === "active" && session.attemptId && !loadingPuzzle && !restartingAttempt,
   );
   $: puzzleTitle = formatPuzzleName(session?.coolId);
+  $: difficultyKey = `puzzles.difficulty.${session?.difficulty ?? selectedDifficulty}`;
+  $: difficultyLabel = $t(difficultyKey);
   $: statusTone = errorMessage ? "error" : infoMessage ? "info" : hintMessage ? "hint" : "muted";
   $: statusText = errorMessage || infoMessage || hintMessage || "ready";
   $: nextPuzzleLabel = $t("puzzles.controls.nextPuzzle");
@@ -787,78 +963,37 @@
 </script>
 
 <section class="trainer">
-  <header class="trainer__header">
-    <div class="trainer__left">
-      <button type="button" class="back" on:click={onBack}>
-        {$t("puzzles.header.back")}
-      </button>
-      <h1>{$t("puzzles.header.title")}</h1>
-      <p class="trainer__subtitle">{$t("puzzles.header.tagline")}</p>
-    </div>
-    <div class="trainer__actions">
-      {#if user}
-        <div class="trainer__user">
-          <span class="trainer__avatar" aria-hidden="true">♟</span>
-          <span>{user.username ?? $t("puzzles.header.player")}</span>
-        </div>
-      {/if}
-      <button type="button" class="ghost" on:click={onLogout}>
-        {$t("puzzles.header.logout")}
-      </button>
-    </div>
-  </header>
+  <PuzzleTrainerHeader
+    {user}
+    on:back={() => onBack()}
+    on:logout={() => onLogout()}
+  />
 
-  <section class="puzzle-meta" aria-live="polite">
-    <div class="puzzle-meta__title" data-celebrating={celebrationActive}>
-      <span class="puzzle-meta__glyph" aria-hidden="true">♞</span>
-      <span class="puzzle-meta__name">{puzzleTitle}</span>
-      <span class="puzzle-meta__glyph" aria-hidden="true">♘</span>
-    </div>
-    <div class="puzzle-meta__details">
-      <span class="chip chip--difficulty">
-        {$t(`puzzles.difficulty.${session?.difficulty ?? selectedDifficulty}`)}
-      </span>
-      {#if sideAnnouncement}
-        <span class="chip chip--side">{sideAnnouncement}</span>
-      {/if}
-      <span class={`chip chip--${statusTone}`}>{statusText}</span>
-    </div>
-  </section>
+  <PuzzleMetaPanel
+    title={puzzleTitle}
+    difficultyLabel={difficultyLabel}
+    sideAnnouncement={sideAnnouncement}
+    statusTone={statusTone}
+    statusText={statusText}
+    celebrating={celebrationActive}
+  />
 
   <div class="trainer__layout">
-    <section class="board-panel">
-      <ChessBoard
-        startingFen={session?.baseFen ?? null}
-        positionFen={boardFen}
-        resetToken={boardResetToken}
-        orientation={orientation}
-        guidanceShapes={guidanceShapes}
-        onMove={handleBoardMove}
-        interactive={boardInteractive}
-        showStatus={false}
-        showControls={false}
-      />
-      {#if attemptFinished}
-        <div class="board-actions">
-          <button
-            type="button"
-            class="board-actions__next"
-            on:click={handleNextPuzzle}
-            disabled={loadingPuzzle}
-          >
-            {nextPuzzleLabel}
-          </button>
-          <button
-            type="button"
-            class="board-actions__retry"
-            on:click={handleRetryPuzzle}
-            disabled={loadingPuzzle}
-          >
-            {retryPuzzleLabel}
-          </button>
-        </div>
-      {/if}
-    </section>
+    <PuzzleBoardPanel
+      startingFen={session?.baseFen ?? null}
+      positionFen={boardFen}
+      resetToken={boardResetToken}
+      orientation={orientation}
+      guidanceShapes={guidanceShapes}
+      interactive={boardInteractive}
+      attemptFinished={attemptFinished}
+      loadingPuzzle={loadingPuzzle}
+      nextLabel={nextPuzzleLabel}
+      retryLabel={retryPuzzleLabel}
+      on:move={(event) => handleBoardMove(event.detail)}
+      on:next={() => handleNextPuzzle()}
+      on:retry={() => handleRetryPuzzle()}
+    />
 
     <aside class="sidebar">
       <PuzzleScoreCard
@@ -913,230 +1048,10 @@
     padding: 1.25rem;
   }
 
-  .trainer__header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .trainer__left {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 1.6rem;
-    letter-spacing: 0.06em;
-    color: #f8fafc;
-  }
-
-  .trainer__subtitle {
-    margin: 0;
-    color: rgba(148, 163, 184, 0.75);
-    font-size: 0.9rem;
-    letter-spacing: 0.04em;
-  }
-
-  .trainer__actions {
-    display: flex;
-    gap: 0.65rem;
-    align-items: center;
-  }
-
-  .trainer__user {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    background: rgba(15, 23, 42, 0.45);
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    padding: 0.4rem 0.8rem;
-    border-radius: 999px;
-    font-size: 0.9rem;
-    color: #e2e8f0;
-  }
-
-  .trainer__avatar {
-    font-size: 1.1rem;
-  }
-
-  .ghost,
-  .back {
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    background: rgba(15, 23, 42, 0.65);
-    color: #e2e8f0;
-    padding: 0.55rem 0.9rem;
-    border-radius: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
-  }
-
-  .ghost:hover,
-  .back:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.35);
-  }
-
-  .back {
-    align-self: flex-start;
-  }
-
-  .puzzle-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-    padding: 0.9rem 1.2rem;
-    border-radius: 16px;
-    background: rgba(15, 23, 42, 0.5);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.3);
-    font-family: "IBM Plex Mono", "Fira Code", "Menlo", monospace;
-  }
-
-  .puzzle-meta__title {
-    display: flex;
-    align-items: baseline;
-    justify-content: center;
-    gap: 0.75rem;
-    font-size: 1.25rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #e2e8f0;
-  }
-
-  .puzzle-meta__title[data-celebrating="true"] {
-    color: #facc15;
-    text-shadow: 0 0 14px rgba(250, 204, 21, 0.4);
-  }
-
-  .puzzle-meta__glyph {
-    font-size: 1.2rem;
-    opacity: 0.8;
-  }
-
-  .puzzle-meta__name {
-    font-size: 1.1em;
-    white-space: nowrap;
-  }
-
-  .puzzle-meta__details {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.5rem;
-  }
-
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.35rem 0.75rem;
-    border-radius: 999px;
-    font-size: 0.8rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    border: 1px solid transparent;
-  }
-
-  .chip--difficulty {
-    background: rgba(59, 130, 246, 0.18);
-    border-color: rgba(59, 130, 246, 0.35);
-    color: #bfdbfe;
-  }
-
-  .chip--side {
-    background: rgba(148, 163, 184, 0.18);
-    border-color: rgba(148, 163, 184, 0.28);
-    color: rgba(226, 232, 240, 0.9);
-  }
-
-  .chip--info {
-    background: rgba(20, 184, 166, 0.18);
-    border-color: rgba(16, 185, 129, 0.32);
-    color: #99f6e4;
-  }
-
-  .chip--error {
-    background: rgba(248, 113, 113, 0.16);
-    border-color: rgba(239, 68, 68, 0.32);
-    color: #fecaca;
-  }
-
-  .chip--hint {
-    background: rgba(234, 179, 8, 0.16);
-    border-color: rgba(234, 179, 8, 0.28);
-    color: #fef9c3;
-  }
-
-  .chip--muted {
-    background: rgba(100, 116, 139, 0.18);
-    border-color: rgba(100, 116, 139, 0.28);
-    color: rgba(226, 232, 240, 0.75);
-  }
-
   .trainer__layout {
     display: grid;
     grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
     gap: 1.25rem;
-  }
-
-  .board-panel {
-    background: rgba(15, 23, 42, 0.38);
-    border-radius: 18px;
-    padding: 1.1rem;
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    transition: box-shadow 0.2s ease;
-  }
-
-  .board-actions {
-    display: none;
-    margin-top: 0.85rem;
-    gap: 0.65rem;
-  }
-
-  .board-actions__next,
-  .board-actions__retry {
-    flex: 1 1 auto;
-    border-radius: 12px;
-    padding: 0.65rem 0.9rem;
-    font-size: 0.9rem;
-    font-weight: 600;
-    border: none;
-    cursor: pointer;
-    transition: transform 140ms ease, filter 140ms ease;
-  }
-
-  .board-actions__next {
-    background: linear-gradient(135deg, #22c55e, #16a34a);
-    color: #f8fafc;
-  }
-
-  .board-actions__retry {
-    background: rgba(15, 23, 42, 0.75);
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    color: #e2e8f0;
-  }
-
-  .board-actions__next:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .board-actions__retry:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .board-actions__next:not(:disabled):hover,
-  .board-actions__retry:not(:disabled):hover {
-    transform: translateY(-1px);
-  }
-
-  .board-panel:hover {
-    box-shadow: 0 16px 32px rgba(15, 23, 42, 0.35);
   }
 
   .sidebar {
@@ -1156,27 +1071,8 @@
       padding: 1rem;
     }
 
-    .trainer__header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.75rem;
-    }
-
     .trainer__layout {
       gap: 1rem;
-    }
-
-    .trainer__actions {
-      width: 100%;
-      justify-content: space-between;
-    }
-
-    .puzzle-meta {
-      padding: 0.8rem 1rem;
-    }
-
-    .puzzle-meta__title {
-      font-size: 1.15rem;
     }
   }
 
@@ -1186,34 +1082,12 @@
       gap: 0.85rem;
     }
 
-    .trainer__left {
-      gap: 0.1rem;
-    }
-
     .trainer__layout {
       gap: 0.85rem;
     }
 
-    .board-panel {
-      padding: 0.75rem;
-    }
-
-    .board-actions {
-      display: flex;
-    }
-
     .sidebar {
       gap: 0.9rem;
-    }
-
-    .puzzle-meta {
-      gap: 0.35rem;
-      padding: 0.7rem 0.9rem;
-    }
-
-    .puzzle-meta__details {
-      flex-wrap: wrap;
-      gap: 0.35rem;
     }
 
     :global(.score-card) {

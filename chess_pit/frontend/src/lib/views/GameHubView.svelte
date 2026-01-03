@@ -650,25 +650,27 @@
                             <fieldset class="engine-mode">
                                 <legend>{engineModeLabel}</legend>
                                 <p class="hint">{engineModeHelp}</p>
-                                <div class="mode-toggle" role="group" aria-label={engineModeLabel}>
-                                    <button
-                                        type="button"
-                                        class="mode-pill"
-                                        class:active={engineUsesDepth}
-                                        on:click={() => onChangeEngineMode(ENGINE_MODE_DEPTH)}
-                                        aria-pressed={engineUsesDepth}
-                                    >
-                                        {engineModeDepthLabel}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="mode-pill"
-                                        class:active={!engineUsesDepth}
-                                        on:click={() => onChangeEngineMode(ENGINE_MODE_TIME)}
-                                        aria-pressed={!engineUsesDepth}
-                                    >
-                                        {engineModeTimeLabel}
-                                    </button>
+                                <div class="mode-toggle" role="radiogroup" aria-label={engineModeLabel}>
+                                    <label class="mode-pill" class:active={engineUsesDepth}>
+                                        <input
+                                            type="radio"
+                                            name="engine-mode"
+                                            value={ENGINE_MODE_DEPTH}
+                                            checked={engineUsesDepth}
+                                            on:change={() => onChangeEngineMode(ENGINE_MODE_DEPTH)}
+                                        />
+                                        <span>{engineModeDepthLabel}</span>
+                                    </label>
+                                    <label class="mode-pill" class:active={!engineUsesDepth}>
+                                        <input
+                                            type="radio"
+                                            name="engine-mode"
+                                            value={ENGINE_MODE_TIME}
+                                            checked={!engineUsesDepth}
+                                            on:change={() => onChangeEngineMode(ENGINE_MODE_TIME)}
+                                        />
+                                        <span>{engineModeTimeLabel}</span>
+                                    </label>
                                 </div>
                             </fieldset>
                         {/if}
@@ -1267,6 +1269,7 @@
     }
 
     .mode-pill {
+        position: relative;
         background: rgba(30, 64, 175, 0.18);
         border: 1px solid transparent;
         color: #dbeafe;
@@ -1275,13 +1278,26 @@
         align-items: center;
         justify-content: center;
         height: 1.55rem;
-        padding: 0 0.65rem;
+        padding: 0 0.75rem;
         font-size: 0.78rem;
         cursor: pointer;
         transition:
             background 0.18s ease,
             border-color 0.18s ease,
             transform 0.18s ease;
+    }
+
+    .mode-pill input {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: pointer;
+    }
+
+    .mode-pill span {
+        pointer-events: none;
     }
 
     .mode-pill:hover {

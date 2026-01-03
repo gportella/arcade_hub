@@ -89,10 +89,7 @@ def _resolve_analysis_context(
     )
 
     configured_depth = (
-        payload_depth
-        or game.engine_depth
-        or spec.default_depth
-        or settings.engine_default_depth
+        payload_depth or game.engine_depth or spec.default_depth or settings.engine_default_depth
     )
     desired_depth = _clamp_depth_for_spec(configured_depth, spec)
     depth = desired_depth or settings.engine_default_depth
@@ -798,7 +795,9 @@ async def stream_game_analysis_sequence(
                     "type": "complete",
                     "payload": {
                         "depth": final_analysis.depth if final_analysis else depth,
-                        "final_evaluation_cp": final_analysis.evaluation_cp if final_analysis else None,
+                        "final_evaluation_cp": final_analysis.evaluation_cp
+                        if final_analysis
+                        else None,
                         "final_mate_in": final_analysis.mate_in if final_analysis else None,
                     },
                 }

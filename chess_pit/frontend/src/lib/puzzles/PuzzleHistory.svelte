@@ -173,4 +173,28 @@
       align-items: flex-start;
     }
   }
+
+  @media (max-width: 680px) {
+    .history {
+      padding: 1rem;
+      gap: 0.8rem;
+    }
+
+    .history__list {
+      gap: 0.75rem;
+    }
+
+    .history__item {
+      padding: 0.75rem 0.85rem;
+      gap: 0.65rem;
+    }
+
+    .history__title {
+      font-size: 0.95rem;
+    }
+
+    .history__points {
+      font-size: 1.05rem;
+    }
+  }
 </style>

@@ -92,6 +92,13 @@ export async function fetchAdminUsers(token) {
     return handleResponse(response);
 }
 
+export async function fetchAdminUserGames(userId, token) {
+    const response = await fetch(`${API_BASE}/admin/users/${userId}/games`, {
+        headers: buildJsonHeaders(token),
+    });
+    return handleResponse(response);
+}
+
 export async function fetchGameDetail(gameId, token) {
     const response = await fetch(`${API_BASE}/games/${gameId}`, {
         headers: buildJsonHeaders(token),
@@ -167,6 +174,21 @@ export async function updateUser(userId, payload, token) {
         headers: buildJsonHeaders(token),
         body: JSON.stringify(payload),
     });
+    return handleResponse(response);
+}
+
+export async function fetchLeaderboard({ limit } = {}) {
+    const params = new URLSearchParams();
+    if (limit) {
+        params.set("limit", String(limit));
+    }
+    const query = params.toString();
+    const response = await fetch(
+        `${API_BASE}/users/leaderboard${query ? `?${query}` : ""}`,
+        {
+            headers: buildJsonHeaders(),
+        },
+    );
     return handleResponse(response);
 }
 

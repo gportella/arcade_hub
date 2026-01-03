@@ -226,9 +226,19 @@
   }
 
   @media (max-width: 680px) {
+    .controls {
+      padding: 1rem;
+      gap: 0.85rem;
+    }
+
     .controls__row {
       flex-direction: column;
       align-items: stretch;
+      gap: 0.65rem;
+    }
+
+    .controls__row--complete {
+      display: none;
     }
 
     button,

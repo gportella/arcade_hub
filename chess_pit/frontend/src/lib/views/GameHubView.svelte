@@ -1,4 +1,6 @@
 <script>
+    import { onMount } from "svelte";
+    import HubLeaderboard from "../components/HubLeaderboard.svelte";
     import { locale, t } from "../i18n";
     /** @type {{ id: string; nickname: string; avatar: string; rating?: number | null } | null} */
     export let user = null;
@@ -31,6 +33,11 @@
     export let onLogout = () => {};
     export let onRefreshGames = () => {};
     export let showAdminLink = false;
+    export let leaderboard = [];
+    export let isLeaderboardLoading = false;
+    let showActionMenu = false;
+    let actionMenuRef;
+    let menuToggleRef;
 
     const isFinished = (game) =>
         game.status === "completed" || game.status === "aborted";
@@ -60,7 +67,6 @@
     $: summaryFallback = $t("game.summary.default");
     $: unknownLabel = $t("label.unknown");
     $: engineBadge = $t("label.engine");
-    $: ratingLabel = $t("label.rating");
     $: ratingValueLabel = $t("label.ratingValue");
     $: toggleNewGameLabel = showNewGameForm ? closeLabel : newLabel;
     $: userAlt = $t("avatar.label", { name: user?.nickname ?? "" });
@@ -85,6 +91,17 @@
     $: undatedGroupLabel = $t("hub.groups.undated");
     $: expandGroupLabel = $t("hub.groups.expand");
     $: collapseGroupLabel = $t("hub.groups.collapse");
+    $: leaderboardHeading = $t("hub.leaderboard.heading");
+    $: leaderboardSubtitle = $t("hub.leaderboard.subtitle");
+    $: leaderboardRankLabel = $t("hub.leaderboard.rank");
+    $: leaderboardPlayerLabel = $t("hub.leaderboard.player");
+    $: leaderboardRatingLabel = $t("hub.leaderboard.rating");
+    $: leaderboardRecordLabel = $t("hub.leaderboard.record");
+    $: leaderboardWinRateLabel = $t("hub.leaderboard.winRate");
+    $: leaderboardPuzzlesLabel = $t("hub.leaderboard.puzzles");
+    $: leaderboardLastActiveLabel = $t("hub.leaderboard.lastActive");
+    $: leaderboardEmptyLabel = $t("hub.leaderboard.empty");
+    $: leaderboardLoadingLabel = $t("hub.leaderboard.loading");
 
     $: currentLocale = $locale;
 
@@ -244,6 +261,58 @@
         return ratingValueLabel.replace("{value}", display);
     };
 
+    const safeNumber = (value) => (Number.isFinite(value) ? Number(value) : 0);
+
+    const formatWinRate = (wins, games) => {
+        if (!games) {
+            return "—";
+        }
+        const ratio = Math.round((wins / games) * 100);
+        return `${ratio}%`;
+    };
+
+    const formatRecord = (entry) => {
+        const wins = safeNumber(entry?.games_won);
+        const losses = safeNumber(entry?.games_lost);
+        const draws = safeNumber(entry?.games_drawn);
+        return `${wins}-${losses}-${draws}`;
+    };
+
+    const formatPuzzleSummary = (entry) => {
+        const solved = safeNumber(entry?.puzzles_solved);
+        const attempted = safeNumber(entry?.puzzles_attempted);
+        return attempted ? `${solved}/${attempted}` : `${solved}/0`;
+    };
+
+    const formatActivity = (entry) => {
+        return formatTime(entry?.last_activity_at || entry?.last_game_at || null);
+    };
+
+    $: rankedEntries = Array.isArray(leaderboard)
+        ? leaderboard.map((entry, index) => ({ ...entry, rank: index + 1 }))
+        : [];
+    $: userRankEntry = rankedEntries.find((entry) => String(entry.id) === String(user?.id)) ?? null;
+    $: hubLeaderboard = rankedEntries.slice(0, 5);
+    $: hubLeaderboardRows = hubLeaderboard.map((entry) => ({
+        id: entry.id,
+        rank: entry.rank,
+        username: entry.username,
+        avatar: entry.avatar_url || "",
+        ratingText: ratingDisplay(entry.rating) ?? "—",
+        recordText: formatRecord(entry),
+        winRateText: formatWinRate(entry.games_won, entry.games_played),
+        puzzlesText: formatPuzzleSummary(entry),
+        activityText: formatActivity(entry) || "—",
+        highlight: String(entry.id) === String(user?.id),
+    }));
+    $: leaderboardFootnote =
+        userRankEntry && userRankEntry.rank > hubLeaderboard.length
+            ? $t("hub.leaderboard.yourRank", {
+                  rank: userRankEntry.rank,
+                  rating: ratingDisplay(userRankEntry.rating) ?? "—",
+              })
+            : "";
+
     const toRenderGame = (game) => {
         const opponent = game?.opponent ?? null;
         const opponentLabel = opponentNameDisplay(opponent);
@@ -376,6 +445,46 @@
         }
         onChangeColor(selectEl.value);
     };
+
+    const toggleActionMenu = () => {
+        showActionMenu = !showActionMenu;
+    };
+
+    const closeActionMenu = () => {
+        showActionMenu = false;
+    };
+
+    const runMenuAction = (callback) => {
+        closeActionMenu();
+        if (typeof callback === "function") {
+            callback();
+        }
+    };
+
+    const handleMenuKeydown = (event) => {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            closeActionMenu();
+        }
+    };
+
+    const handleDocumentClick = (event) => {
+        if (!showActionMenu) {
+            return;
+        }
+        const target = /** @type {Node} */ (event.target);
+        if (actionMenuRef?.contains(target) || menuToggleRef?.contains(target)) {
+            return;
+        }
+        closeActionMenu();
+    };
+
+    onMount(() => {
+        document.addEventListener("click", handleDocumentClick);
+        return () => {
+            document.removeEventListener("click", handleDocumentClick);
+        };
+    });
 </script>
 
 <main class="hub">
@@ -387,7 +496,7 @@
                 <p class="hub-rating">{ratingValueText(user?.rating)}</p>
             {/if}
         </div>
-        <div class="hub-actions">
+        <div class="hub-actions desktop">
             {#if user}
                 <button
                     type="button"
@@ -414,7 +523,69 @@
                 {logoutLabel}
             </button>
         </div>
+        <div class="hub-actions-mobile">
+            {#if user}
+                <button
+                    type="button"
+                    class="avatar-button"
+                    on:click={() => runMenuAction(onOpenProfile)}
+                    aria-label={profileAria}
+                >
+                    <img src={user?.avatar ?? ""} alt={userAlt} />
+                    <span class="sr-only">{profileLabel}</span>
+                </button>
+            {/if}
+            <button
+                type="button"
+                class="micro secondary menu-toggle"
+                aria-expanded={showActionMenu}
+                aria-controls="hub-action-menu"
+                aria-haspopup="true"
+                on:click={toggleActionMenu}
+                bind:this={menuToggleRef}
+            >
+                {showActionMenu ? $t("hub.actions.menuClose") : $t("hub.actions.menu")}
+            </button>
+            {#if showActionMenu}
+                <div
+                    class="action-menu"
+                    id="hub-action-menu"
+                    role="menu"
+                    on:keydown={handleMenuKeydown}
+                    bind:this={actionMenuRef}
+                >
+                    {#if showAdminLink}
+                        <button type="button" role="menuitem" on:click={() => runMenuAction(onOpenAdmin)}>
+                            {adminLabel}
+                        </button>
+                    {/if}
+                    <button type="button" role="menuitem" on:click={() => runMenuAction(onOpenPuzzles)}>
+                        {puzzlesLabel}
+                    </button>
+                    <button type="button" role="menuitem" on:click={() => runMenuAction(onLogout)}>
+                        {logoutLabel}
+                    </button>
+                </div>
+            {/if}
+        </div>
     </header>
+
+        <HubLeaderboard
+            heading={leaderboardHeading}
+            subtitle={leaderboardSubtitle}
+            rankLabel={leaderboardRankLabel}
+            playerLabel={leaderboardPlayerLabel}
+            ratingLabel={leaderboardRatingLabel}
+            recordLabel={leaderboardRecordLabel}
+            winRateLabel={leaderboardWinRateLabel}
+            puzzlesLabel={leaderboardPuzzlesLabel}
+            lastActiveLabel={leaderboardLastActiveLabel}
+            rows={hubLeaderboardRows}
+            isLoading={isLeaderboardLoading}
+            emptyLabel={leaderboardEmptyLabel}
+            loadingLabel={leaderboardLoadingLabel}
+            footnote={leaderboardFootnote}
+        />
 
     <section class="panel">
         <header class="panel-header">
@@ -846,10 +1017,70 @@
         gap: 0.75rem;
     }
 
-    .hub-actions {
+    .hub-actions.desktop {
         display: flex;
         justify-content: flex-end;
         gap: 0.75rem;
+        align-items: center;
+    }
+
+    .hub-actions-mobile {
+        display: none;
+        align-items: center;
+        gap: 0.5rem;
+        justify-content: flex-end;
+    }
+
+    .menu-toggle {
+        min-width: 0;
+    }
+
+    .action-menu {
+        position: absolute;
+        right: 1rem;
+        top: calc(100% + 0.5rem);
+        display: grid;
+        gap: 0.35rem;
+        padding: 0.75rem;
+        border-radius: 0.85rem;
+        background: rgba(12, 20, 45, 0.95);
+        border: 1px solid rgba(59, 130, 246, 0.25);
+        box-shadow: 0 18px 32px rgba(8, 15, 35, 0.45);
+        z-index: 10;
+        min-width: 180px;
+    }
+
+    .action-menu button {
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        border: none;
+        color: #e2e8f0;
+        font-size: 0.95rem;
+        padding: 0.45rem 0.35rem;
+        border-radius: 0.6rem;
+    }
+
+    .action-menu button:hover,
+    .action-menu button:focus {
+        background: rgba(59, 130, 246, 0.18);
+        outline: none;
+    }
+
+    .hub-header {
+        position: relative;
+    }
+
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
     }
 
     .hub-title h1 {
@@ -1392,14 +1623,14 @@
 
     .game-opponent {
         display: flex;
-        gap: 0.85rem;
+        gap: 0.65rem;
         align-items: center;
     }
 
     .game-opponent img {
-        width: 42px;
-        height: 42px;
-        border-radius: 16px;
+        width: 32px;
+        height: 32px;
+        border-radius: 12px;
         object-fit: cover;
         border: 1px solid rgba(148, 163, 184, 0.25);
     }
@@ -1464,10 +1695,10 @@
         border: none;
         background: rgba(15, 23, 42, 0.6);
         border-radius: 999px;
-        padding: 0.35rem 0.75rem 0.35rem 0.35rem;
+        padding: 0.25rem 0.6rem 0.25rem 0.25rem;
         display: inline-flex;
         align-items: center;
-        gap: 0.6rem;
+        gap: 0.5rem;
         cursor: pointer;
         color: inherit;
         transition: background 0.15s ease;
@@ -1478,8 +1709,8 @@
     }
 
     .avatar-button img {
-        width: 40px;
-        height: 40px;
+        width: 28px;
+        height: 28px;
         border-radius: 50%;
         object-fit: cover;
         border: 1px solid rgba(148, 163, 184, 0.3);
@@ -1531,7 +1762,17 @@
             width: 100%;
         }
 
-        .hub-actions {
+        .hub-header {
+            flex-direction: column;
+        }
+
+        .hub-actions.desktop {
+            display: none;
+        }
+
+        .hub-actions-mobile {
+            display: flex;
+            width: 100%;
             justify-content: space-between;
         }
     }

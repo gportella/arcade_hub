@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from ..api.deps import get_current_user
 from ..db import get_session
 from ..models import Game, GameStatus, PuzzleAttempt, User
-from ..schemas import AdminUserMetrics
+from ..schemas import AdminGameSummary, AdminUserMetrics
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -89,9 +89,9 @@ async def admin_list_users(
             PuzzleAttempt.user_id,
             func.count(PuzzleAttempt.id).label("attempted"),
             func.coalesce(func.sum(solved_case), 0).label("solved"),
-            func.max(
-                func.coalesce(PuzzleAttempt.completed_at, PuzzleAttempt.started_at)
-            ).label("last_attempt"),
+            func.max(func.coalesce(PuzzleAttempt.completed_at, PuzzleAttempt.started_at)).label(
+                "last_attempt"
+            ),
         )
         .where(PuzzleAttempt.user_id.in_(user_ids))
         .group_by(PuzzleAttempt.user_id)
@@ -156,3 +156,58 @@ async def admin_list_users(
         reverse=True,
     )
     return response
+
+
+@router.get("/users/{user_id}/games", response_model=list[AdminGameSummary])
+async def admin_list_user_games(
+    user_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> list[AdminGameSummary]:
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions",
+        )
+
+    target = session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    stmt = (
+        select(Game)
+        .where(or_(Game.white_player_id == user_id, Game.black_player_id == user_id))
+        .order_by(func.coalesce(Game.last_move_at, Game.started_at).desc())
+    )
+    games = session.exec(stmt).all()
+    if not games:
+        return []
+
+    summaries: list[AdminGameSummary] = []
+    for game in games:
+        session.refresh(game, attribute_names=["white_player", "black_player"])
+        if game.id is None:
+            continue
+        white_player = game.white_player
+        black_player = game.black_player
+        if white_player is None or black_player is None:
+            continue
+        summaries.append(
+            AdminGameSummary(
+                id=game.id,
+                white_player_id=white_player.id,
+                white_player_username=white_player.username,
+                white_player_rating=white_player.rating,
+                black_player_id=black_player.id,
+                black_player_username=black_player.username,
+                black_player_rating=black_player.rating,
+                status=game.status,
+                result=game.result,
+                started_at=game.started_at,
+                last_move_at=game.last_move_at,
+                moves_count=game.moves_count,
+                summary=game.summary,
+            )
+        )
+
+    return summaries

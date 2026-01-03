@@ -21,6 +21,8 @@
     resignGame,
     connectToGame,
     fetchAdminUsers,
+    fetchAdminUserGames,
+    fetchLeaderboard,
   } from "./lib/api/client";
   import {
     persistToken,
@@ -198,6 +200,16 @@
   let adminUsers = [];
   let adminError = "";
   let isAdminLoading = false;
+  let adminSelectedUserId = null;
+  let adminUserGames = [];
+  let isAdminGamesLoading = false;
+  let adminGamesError = "";
+  let adminGameContext = null;
+  let selectedGameOrigin = "hub";
+  let leaderboard = [];
+  let isLeaderboardLoading = false;
+  let leaderboardError = "";
+  let leaderboardLoaded = false;
   let analysisEngineSpec = null;
   let analysisSteps = [];
 
@@ -850,13 +862,32 @@
     if (!accessToken || !isAuthenticated || !currentUser?.is_admin) {
       adminUsers = [];
       adminError = "";
+      adminSelectedUserId = null;
+      adminUserGames = [];
+      adminGamesError = "";
+      isAdminGamesLoading = false;
       return;
     }
     isAdminLoading = true;
     adminError = "";
     try {
       const payload = await fetchAdminUsers(accessToken);
-      adminUsers = Array.isArray(payload) ? payload : [];
+      const fetched = Array.isArray(payload) ? payload : [];
+      adminUsers = fetched;
+      if (
+        adminSelectedUserId &&
+        !fetched.some((entry) => entry.id === adminSelectedUserId)
+      ) {
+        adminSelectedUserId = null;
+        adminUserGames = [];
+      }
+      if (!adminSelectedUserId && fetched.length) {
+        adminSelectedUserId = fetched[0].id;
+        adminGameContext = null;
+        await loadAdminUserGames(adminSelectedUserId, { force: true });
+      } else if (adminSelectedUserId) {
+        void loadAdminUserGames(adminSelectedUserId, { force: true });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       adminError = message || tr("errors.loadAdminUsers");
@@ -866,13 +897,167 @@
     }
   }
 
+  function buildAdminPlayerProfile({ id, username, rating }) {
+    const rosterEntry = adminUsers.find((entry) => entry.id === id);
+    const resolvedName = username || rosterEntry?.username || "";
+    const avatarSource = rosterEntry?.avatar_url || fallbackAvatar(resolvedName || "player");
+    return {
+      id,
+      username: resolvedName,
+      rating: rating ?? rosterEntry?.rating ?? null,
+      avatar: avatarSource,
+      isEngine: Boolean(rosterEntry?.is_engine),
+    };
+  }
+
+  function makeSpectatorOpponent(profile) {
+    if (!profile) {
+      return {
+        id: 0,
+        nickname: "",
+        isUnknown: true,
+        avatar: fallbackAvatar("unknown"),
+        isEngine: false,
+        engineKey: null,
+        rating: null,
+      };
+    }
+    const name = profile.username || "";
+    return {
+      id: profile.id ?? 0,
+      nickname: name,
+      isUnknown: !name,
+      avatar: profile.avatar || fallbackAvatar(name || "player"),
+      isEngine: Boolean(profile.isEngine),
+      engineKey: null,
+      rating:
+        typeof profile.rating === "number" && Number.isFinite(profile.rating)
+          ? Math.round(profile.rating)
+          : null,
+    };
+  }
+
+  async function loadAdminUserGames(userId, { force = false } = {}) {
+    if (!userId) {
+      adminUserGames = [];
+      adminGamesError = "";
+      return;
+    }
+    if (!accessToken || !isAuthenticated || !currentUser?.is_admin) {
+      return;
+    }
+    if (
+      !force &&
+      adminSelectedUserId === userId &&
+      adminUserGames.length &&
+      !adminGamesError
+    ) {
+      return;
+    }
+    isAdminGamesLoading = true;
+    adminGamesError = "";
+    try {
+      const payload = await fetchAdminUserGames(userId, accessToken);
+      adminUserGames = Array.isArray(payload) ? payload : [];
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      adminGamesError = message || tr("errors.loadAdminGames");
+      adminUserGames = [];
+    } finally {
+      isAdminGamesLoading = false;
+    }
+  }
+
+  async function selectAdminUser(userId) {
+    if (!isAuthenticated || !currentUser?.is_admin) {
+      return;
+    }
+    const sameSelection = userId === adminSelectedUserId;
+    adminGameContext = null;
+    adminSelectedUserId = userId;
+    if (!userId) {
+      adminUserGames = [];
+      adminGamesError = "";
+      return;
+    }
+    await loadAdminUserGames(userId, { force: !sameSelection });
+  }
+
+  async function analyzeAdminGame(gameSummary) {
+    if (!gameSummary || !isAuthenticated || !currentUser?.is_admin) {
+      return;
+    }
+    const whiteProfile = buildAdminPlayerProfile({
+      id: gameSummary.white_player_id,
+      username: gameSummary.white_player_username,
+      rating: gameSummary.white_player_rating,
+    });
+    const blackProfile = buildAdminPlayerProfile({
+      id: gameSummary.black_player_id,
+      username: gameSummary.black_player_username,
+      rating: gameSummary.black_player_rating,
+    });
+    const perspective =
+      gameSummary.white_player_id === adminSelectedUserId ? "white" : "black";
+    adminGameContext = {
+      players: {
+        white: whiteProfile,
+        black: blackProfile,
+      },
+      perspective,
+    };
+    await openGame(gameSummary.id, { origin: "admin" });
+  }
+
+  async function loadLeaderboard(force = false) {
+    if (force) {
+      leaderboardLoaded = false;
+    }
+    if (isLeaderboardLoading) {
+      return;
+    }
+    if (leaderboardLoaded && !force) {
+      return;
+    }
+    isLeaderboardLoading = true;
+    leaderboardError = "";
+    try {
+      const payload = await fetchLeaderboard({ limit: 10 });
+      leaderboard = Array.isArray(payload) ? payload : [];
+      leaderboardLoaded = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      leaderboardError = message || tr("errors.loadLeaderboard");
+      leaderboard = [];
+    } finally {
+      isLeaderboardLoading = false;
+    }
+  }
+
   async function refreshSelectedGame(gameId) {
     if (!accessToken) return;
     gameError = "";
     try {
       const detail = await fetchGameDetail(gameId, accessToken);
-      selectedGame = mapGameDetail(detail);
-      await maybeTriggerEngineMove(selectedGame);
+      let mapped = mapGameDetail(detail);
+      if (selectedGameOrigin === "admin" && adminGameContext) {
+        const { players, perspective } = adminGameContext;
+        const viewerColor = perspective === "black" ? "black" : "white";
+        const opponentProfile = viewerColor === "white" ? players.black : players.white;
+        mapped = {
+          ...mapped,
+          yourColor: viewerColor,
+          players,
+          opponent: opponentProfile ? makeSpectatorOpponent(opponentProfile) : mapped.opponent,
+          isSpectator: true,
+        };
+      } else {
+        mapped = { ...mapped, isSpectator: false };
+      }
+      selectedGame = mapped;
+      if (selectedGameOrigin === "hub") {
+        await maybeTriggerEngineMove(selectedGame);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       gameError = message || tr("errors.loadGame");
@@ -900,13 +1085,19 @@
     };
   }
 
-  async function openGame(id) {
+  async function openGame(id, options = {}) {
     if (!id || !isAuthenticated) return;
+    const origin = options.origin ?? "hub";
     resetAnalysis();
+    selectedGameOrigin = origin;
     selectedGameId = id;
     gameError = "";
     await refreshSelectedGame(id);
-    connectSocket(id);
+    if (origin === "hub") {
+      connectSocket(id);
+    } else {
+      teardownSocket();
+    }
     stopHubPolling();
     currentView = VIEW.PLAY;
     navigateTo(VIEW.PLAY, { id });
@@ -1110,7 +1301,7 @@
   };
 
   const handleBoardMove = async (event) => {
-    if (!selectedGame || !isAuthenticated) return;
+    if (!selectedGame || !isAuthenticated || selectedGame?.isSpectator) return;
     const detail =
       event && typeof event === "object" && "detail" in event
         ? (event.detail ?? {})
@@ -1139,12 +1330,12 @@
   };
 
   const handleBoardUndo = async () => {
-    if (!selectedGame) return;
+    if (!selectedGame || selectedGame?.isSpectator) return;
     await refreshSelectedGame(selectedGame.id);
   };
 
   const handleResign = async () => {
-    if (!selectedGame || !isAuthenticated) return;
+    if (!selectedGame || !isAuthenticated || selectedGame?.isSpectator) return;
     gameError = "";
     try {
       await resignGame(selectedGame.id, accessToken);
@@ -1265,12 +1456,27 @@
   };
 
   const returnToGames = () => {
-    currentView = VIEW.GAMES;
     teardownSocket();
     resetAnalysis();
+    selectedGameOrigin = "hub";
+    currentView = VIEW.GAMES;
     startHubPolling();
     void loadHub();
     navigateTo(VIEW.GAMES);
+  };
+
+  const exitGameView = () => {
+    if (selectedGameOrigin === "admin") {
+      teardownSocket();
+      resetAnalysis();
+      selectedGameId = null;
+      selectedGame = null;
+      selectedGameOrigin = "hub";
+      currentView = VIEW.ADMIN;
+      navigateTo(VIEW.ADMIN);
+      return;
+    }
+    returnToGames();
   };
 
   const handleProfileFieldChange = (field, value) => {
@@ -1305,6 +1511,16 @@
     adminUsers = [];
     adminError = "";
     isAdminLoading = false;
+    adminSelectedUserId = null;
+    adminUserGames = [];
+    adminGamesError = "";
+    isAdminGamesLoading = false;
+    adminGameContext = null;
+    selectedGameOrigin = "hub";
+    leaderboard = [];
+    leaderboardError = "";
+    isLeaderboardLoading = false;
+    leaderboardLoaded = false;
     resetAnalysis();
     currentView = VIEW.LANDING;
     navigateTo(VIEW.LANDING);
@@ -1352,6 +1568,13 @@
   });
 
   $: orderedGames = sortGames(games);
+
+  $: if (
+    !leaderboardLoaded &&
+    (currentView === VIEW.LANDING || currentView === VIEW.GAMES || currentView === VIEW.PROFILE)
+  ) {
+    void loadLeaderboard();
+  }
 
   $: if (availableOpponents.length) {
     if (
@@ -1427,6 +1650,10 @@
       isLoading={isLandingLoading}
       onPlay={performLogin}
       onAdminLogin={performLogin}
+      leaderboard={leaderboard}
+      leaderboardError={leaderboardError}
+      isLeaderboardLoading={isLeaderboardLoading}
+      {formatTime}
     />
   {:else if currentView === VIEW.GAMES && isAuthenticated}
     {#if hubError}
@@ -1461,6 +1688,8 @@
       onOpenAdmin={openAdmin}
       onLogout={logout}
       showAdminLink={Boolean(currentUser?.is_admin)}
+      leaderboard={leaderboard}
+      isLeaderboardLoading={isLeaderboardLoading}
       onRefreshGames={() => {
         void loadHub();
       }}
@@ -1483,7 +1712,7 @@
       analysisFetchedAt={analysisFetchedAt}
       analysisSteps={analysisSteps}
       onAnalyze={runAnalysis}
-      onBack={returnToGames}
+      onBack={exitGameView}
       onLogout={logout}
     />
   {:else if currentView === VIEW.PROFILE && isAuthenticated}
@@ -1491,6 +1720,8 @@
       user={currentUser}
       {profileDraft}
       gameCount={orderedGames.length}
+      leaderboard={leaderboard}
+      isLeaderboardLoading={isLeaderboardLoading}
       onFieldChange={handleProfileFieldChange}
       onSave={saveProfile}
       onBack={returnToGames}
@@ -1505,6 +1736,12 @@
       onBack={returnToGames}
       onLogout={logout}
       {formatTime}
+      selectedUserId={adminSelectedUserId}
+      onSelectUser={selectAdminUser}
+      userGames={adminUserGames}
+      gamesLoading={isAdminGamesLoading}
+      gamesError={adminGamesError}
+      onAnalyzeGame={analyzeAdminGame}
     />
   {:else if currentView === VIEW.PUZZLES && isAuthenticated}
     <PuzzleTrainerView

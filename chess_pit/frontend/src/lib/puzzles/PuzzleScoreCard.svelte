@@ -183,4 +183,25 @@
       padding: 1.25rem;
     }
   }
+
+  @media (max-width: 680px) {
+    .score-card {
+      padding: 1rem;
+      gap: 0.9rem;
+    }
+
+    .score-card__grid {
+      gap: 0.85rem;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+
+    dd {
+      font-size: 1.4rem;
+    }
+
+    .score-card__difficulty {
+      font-size: 0.7rem;
+      padding: 0.35rem 0.65rem;
+    }
+  }
 </style>

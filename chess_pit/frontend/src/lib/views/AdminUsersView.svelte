@@ -8,6 +8,12 @@
     export let onBack = () => {};
     export let onLogout = () => {};
     export let formatTime = (_iso) => "";
+    export let selectedUserId = null;
+    export let onSelectUser = (_id) => {};
+    export let userGames = [];
+    export let gamesLoading = false;
+    export let gamesError = "";
+    export let onAnalyzeGame = (_game) => {};
 
     let sortKey = "activity";
     let sortDirection = "desc";
@@ -83,6 +89,78 @@
         return date.toLocaleString();
     };
 
+    const resultLabel = (result) => {
+        if (result === "white") {
+            return $t("admin.games.resultWhite");
+        }
+        if (result === "black") {
+            return $t("admin.games.resultBlack");
+        }
+        if (result === "draw") {
+            return $t("admin.games.resultDraw");
+        }
+        return "—";
+    };
+
+    const statusLabelFor = (status) => {
+        switch (status) {
+            case "pending":
+                return $t("admin.games.status.pending");
+            case "active":
+                return $t("admin.games.status.active");
+            case "completed":
+                return $t("admin.games.status.completed");
+            case "aborted":
+                return $t("admin.games.status.aborted");
+            default:
+                return status || "";
+        }
+    };
+
+    const opponentForGame = (game) => {
+        if (!game || selectedUserId === null) {
+            return null;
+        }
+        if (game.white_player_id === selectedUserId) {
+            return {
+                id: game.black_player_id,
+                username: game.black_player_username,
+                rating: game.black_player_rating,
+            };
+        }
+        return {
+            id: game.white_player_id,
+            username: game.white_player_username,
+            rating: game.white_player_rating,
+        };
+    };
+
+    const opponentNameFor = (game) => {
+        const opponent = opponentForGame(game);
+        const name = opponent?.username ?? "";
+        return name || $t("label.unknown");
+    };
+
+    const opponentRatingFor = (game) => {
+        const opponent = opponentForGame(game);
+        return Number.isFinite(opponent?.rating) ? opponent.rating : null;
+    };
+
+    const opponentAvatarFor = (game) => {
+        const opponent = opponentForGame(game);
+        return fallbackAvatar(opponent?.username || "player");
+    };
+
+    const lastMoveTimeFor = (game) => describeTime(game?.last_move_at, neverLabel);
+    const startedTimeFor = (game) => describeTime(game?.started_at, neverLabel);
+
+    const handleRowKeydown = (event, userId) => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectUser(userId);
+        }
+    };
+
     const puzzleRate = (solved, attempted) => {
         if (!attempted) {
             return 0;
@@ -112,6 +190,12 @@
             .replace("{draws}", draws);
     };
 
+    const selectUser = (userId) => {
+        if (typeof onSelectUser === "function") {
+            onSelectUser(userId);
+        }
+    };
+
     $: headerTitle = $t("admin.heading");
     $: headerSubtitle = $t("admin.subheading");
     $: backLabel = $t("admin.back");
@@ -134,6 +218,20 @@
     $: neverLabel = $t("admin.activity.never");
     $: recordSummaryTemplate = $t("admin.record.summary");
     $: puzzlesSummaryTemplate = $t("admin.puzzles.summary");
+    $: gamesHeading = $t("admin.games.heading");
+    $: gamesSubheading = $t("admin.games.subheading");
+    $: gamesEmptyLabel = $t("admin.games.empty");
+    $: gamesPlaceholder = $t("admin.games.placeholder");
+    $: gamesErrorLabel = $t("admin.games.error");
+    $: gamesLoadingLabel = $t("admin.games.loading");
+    $: gamesOpponentHeader = $t("admin.games.opponent");
+    $: gamesStatusHeader = $t("admin.games.status");
+    $: gamesResultHeader = $t("admin.games.result");
+    $: gamesMovesHeader = $t("admin.games.moves");
+    $: gamesStartedHeader = $t("admin.games.started");
+    $: gamesLastMoveHeader = $t("admin.games.lastMove");
+    $: gamesActionHeader = $t("admin.games.action");
+    $: gamesAnalyzeLabel = $t("admin.games.analyze");
 
     $: sortedUsers = Array.isArray(users)
         ? [...users].sort((a, b) => {
@@ -143,6 +241,12 @@
               return sortDirection === "desc" ? -comparison : comparison;
           })
         : [];
+
+    $: selectedUser = users.find((user) => user.id === selectedUserId) ?? null;
+    $: resolvedGames = Array.isArray(userGames) ? userGames : [];
+    $: gamesSubtitle = selectedUser
+        ? $t("admin.games.selected", { name: selectedUser.username })
+        : gamesSubheading;
 
     const sortState = (key) => {
         if (sortKey !== key) {
@@ -280,7 +384,15 @@
                     </thead>
                     <tbody>
                         {#each sortedUsers as user}
-                            <tr>
+                            <tr
+                                class="selectable"
+                                class:selected={user.id === selectedUserId}
+                                role="button"
+                                tabindex="0"
+                                aria-pressed={user.id === selectedUserId}
+                                on:click={() => selectUser(user.id)}
+                                on:keydown={(event) => handleRowKeydown(event, user.id)}
+                            >
                                 <th scope="row">
                                     <div class="player">
                                         <img
@@ -336,6 +448,114 @@
             </div>
         {:else if !isLoading}
             <p class="empty">{emptyLabel}</p>
+        {/if}
+    </section>
+
+    <section class="admin-card glass-panel admin-games-card">
+        <div class="card-header">
+            <div>
+                <h2>{gamesHeading}</h2>
+                <p>{gamesSubtitle}</p>
+            </div>
+            {#if gamesLoading}
+                <span class="status-pill">{gamesLoadingLabel}</span>
+            {/if}
+        </div>
+
+        {#if gamesError}
+            <p class="error" role="alert">{gamesError || gamesErrorLabel}</p>
+        {:else if !selectedUser}
+            <p class="empty">{gamesPlaceholder}</p>
+        {:else}
+            <div class="selected-overview">
+                <div class="player">
+                    <img
+                        src={selectedUser.avatar_url || fallbackAvatar(selectedUser.username)}
+                        alt={selectedUser.username}
+                    />
+                    <div>
+                        <strong>{selectedUser.username}</strong>
+                        <div class="selected-meta">{recordSummaryText(selectedUser)}</div>
+                        <div class="selected-meta">{puzzlesSummaryText(selectedUser)}</div>
+                    </div>
+                </div>
+                <dl class="selected-stats">
+                    <div>
+                        <dt>{ratingHeader}</dt>
+                        <dd>{Number.isFinite(selectedUser.rating) ? selectedUser.rating : "—"}</dd>
+                    </div>
+                    <div>
+                        <dt>{gamesHeader}</dt>
+                        <dd>{selectedUser.games_played}</dd>
+                    </div>
+                    <div>
+                        <dt>{lastGameHeader}</dt>
+                        <dd>{describeTime(selectedUser.last_game_at, neverLabel)}</dd>
+                    </div>
+                    <div>
+                        <dt>{lastActiveHeader}</dt>
+                        <dd>{describeTime(selectedUser.last_activity_at, neverLabel)}</dd>
+                    </div>
+                </dl>
+            </div>
+
+            {#if !resolvedGames.length && !gamesLoading}
+                <p class="empty">{gamesEmptyLabel}</p>
+            {:else if resolvedGames.length}
+                <div class="table-wrapper">
+                    <table class="admin-table games-table">
+                        <colgroup>
+                            <col class="col-player" />
+                            <col class="col-status" />
+                            <col class="col-result" />
+                            <col class="col-moves" />
+                            <col class="col-timestamp" />
+                            <col class="col-timestamp" />
+                            <col class="col-action" />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th scope="col" class="col-player">{gamesOpponentHeader}</th>
+                                <th scope="col" class="col-status">{gamesStatusHeader}</th>
+                                <th scope="col" class="col-result">{gamesResultHeader}</th>
+                                <th scope="col" class="col-moves numeric">{gamesMovesHeader}</th>
+                                <th scope="col" class="col-timestamp">{gamesStartedHeader}</th>
+                                <th scope="col" class="col-timestamp">{gamesLastMoveHeader}</th>
+                                <th scope="col" class="col-action">{gamesActionHeader}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {#each resolvedGames as game}
+                                <tr>
+                                    <th scope="row">
+                                        <div class="opponent-cell">
+                                            <img src={opponentAvatarFor(game)} alt={opponentNameFor(game)} />
+                                            <div>
+                                                <strong>{opponentNameFor(game)}</strong>
+                                                <span class="muted">{opponentRatingFor(game) ?? "—"}</span>
+                                            </div>
+                                        </div>
+                                    </th>
+                                    <td>{statusLabelFor(game.status)}</td>
+                                    <td>{resultLabel(game.result)}</td>
+                                    <td class="numeric">{game.moves_count}</td>
+                                    <td class="timestamp">{startedTimeFor(game)}</td>
+                                    <td class="timestamp">{lastMoveTimeFor(game)}</td>
+                                    <td class="action-cell">
+                                        <button
+                                            type="button"
+                                            class="small"
+                                            on:click|stopPropagation={() => onAnalyzeGame(game)}
+                                        >
+                                            {gamesAnalyzeLabel}
+                                        </button>
+                                    </td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                </div>
+            {/if}
         {/if}
     </section>
 </main>
@@ -515,6 +735,20 @@
         background: rgba(30, 64, 175, 0.28);
     }
 
+    .admin-table tr.selectable {
+        cursor: pointer;
+        transition: background 0.15s ease, transform 0.15s ease;
+    }
+
+    .admin-table tr.selectable:focus {
+        outline: 2px solid rgba(59, 130, 246, 0.4);
+        outline-offset: -2px;
+    }
+
+    .admin-table tr.selected {
+        background: rgba(59, 130, 246, 0.18);
+    }
+
     .admin-table .numeric,
     .record,
     .timestamp,
@@ -636,6 +870,83 @@
         color: rgba(148, 163, 184, 0.85);
         text-align: center;
         padding: 2.5rem 0;
+    }
+
+    .admin-games-card {
+        gap: 1.25rem;
+    }
+
+    .selected-overview {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.25rem;
+    }
+
+    .selected-overview .player {
+        min-width: 0;
+    }
+
+    .selected-meta {
+        margin-top: 0.35rem;
+        color: rgba(226, 232, 240, 0.75);
+        font-size: 0.85rem;
+    }
+
+    .selected-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 0.85rem;
+    }
+
+    .selected-stats dt {
+        margin: 0;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: rgba(148, 163, 184, 0.75);
+    }
+
+    .selected-stats dd {
+        margin: 0.25rem 0 0;
+        font-weight: 600;
+        color: #f8fafc;
+    }
+
+    .admin-table col.col-status,
+    .admin-table col.col-result,
+    .admin-table col.col-moves,
+    .admin-table col.col-action {
+        width: 120px;
+    }
+
+    .admin-table col.col-timestamp {
+        width: 160px;
+    }
+
+    .games-table .opponent-cell {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+    }
+
+    .games-table .opponent-cell img {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+
+    .games-table .muted {
+        display: block;
+        font-size: 0.8rem;
+        color: rgba(148, 163, 184, 0.75);
+    }
+
+    .games-table .action-cell {
+        text-align: right;
     }
 
     @media (max-width: 768px) {

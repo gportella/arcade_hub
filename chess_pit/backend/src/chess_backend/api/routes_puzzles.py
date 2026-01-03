@@ -176,7 +176,9 @@ def _build_session_response(puzzle: Puzzle, attempt: PuzzleAttempt) -> PuzzleSes
     board = chess.Board(puzzle.fen)
     initial_turn_white = board.turn == chess.WHITE
     solution_moves = [move.lower() for move in puzzle.solution_moves if move]
-    remaining_moves = _remaining_player_moves(solution_moves, played_count=len(attempt.submitted_moves))
+    remaining_moves = _remaining_player_moves(
+        solution_moves, played_count=len(attempt.submitted_moves)
+    )
     current_points = max(0, _MAX_POINTS - attempt.hint_count)
     return PuzzleSessionResponse(
         attempt_id=attempt.id,
@@ -209,7 +211,9 @@ async def fetch_random_puzzle(
     return _build_session_response(puzzle, attempt)
 
 
-@router.post("/{cool_id}/restart", response_model=PuzzleSessionResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{cool_id}/restart", response_model=PuzzleSessionResponse, status_code=status.HTTP_201_CREATED
+)
 async def restart_puzzle_attempt(
     cool_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -381,7 +385,9 @@ async def submit_puzzle_solution(
         except ValueError:
             opponent_move = None
 
-    remaining_player_moves = _remaining_player_moves(solution_moves, played_count=len(submitted_moves))
+    remaining_player_moves = _remaining_player_moves(
+        solution_moves, played_count=len(submitted_moves)
+    )
 
     side_to_move = "white" if board.turn == chess.WHITE else "black"
 

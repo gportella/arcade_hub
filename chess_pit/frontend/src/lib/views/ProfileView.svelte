@@ -11,6 +11,8 @@
     export let onSave = () => {};
     export let onBack = () => {};
     export let onLogout = () => {};
+    export let leaderboard = [];
+    export let isLeaderboardLoading = false;
 
     const handleInput = (field, value) => {
         onFieldChange(field, value);
@@ -41,6 +43,60 @@
     $: ratingLabel = $t("profile.stats.rating", {
         value: ratingValue(user?.rating) ?? "—",
     });
+
+    const safeNumber = (value) => (Number.isFinite(value) ? Number(value) : 0);
+
+    const formatRecord = (entry) => {
+        const wins = safeNumber(entry?.games_won);
+        const losses = safeNumber(entry?.games_lost);
+        const draws = safeNumber(entry?.games_drawn);
+        return `${wins}-${losses}-${draws}`;
+    };
+
+    const formatWinRate = (entry) => {
+        const wins = safeNumber(entry?.games_won);
+        const games = safeNumber(entry?.games_played);
+        if (!games) {
+            return "—";
+        }
+        return `${Math.round((wins / games) * 100)}%`;
+    };
+
+    const formatPuzzleSummary = (entry) => {
+        const solved = safeNumber(entry?.puzzles_solved);
+        const attempted = safeNumber(entry?.puzzles_attempted);
+        return attempted ? `${solved}/${attempted}` : `${solved}/0`;
+    };
+
+    $: leaderboardHeading = $t("profile.leaderboard.heading");
+    $: leaderboardSubtitle = $t("profile.leaderboard.subtitle");
+    $: leaderboardRankLabel = $t("profile.leaderboard.rank");
+    $: leaderboardPlayerLabel = $t("profile.leaderboard.player");
+    $: leaderboardRatingLabel = $t("profile.leaderboard.rating");
+    $: leaderboardRecordLabel = $t("profile.leaderboard.record");
+    $: leaderboardWinRateLabel = $t("profile.leaderboard.winRate");
+    $: leaderboardPuzzlesLabel = $t("profile.leaderboard.puzzles");
+    $: leaderboardEmptyLabel = $t("profile.leaderboard.empty");
+    $: leaderboardLoadingLabel = $t("profile.leaderboard.loading");
+    $: leaderboardNotRankedLabel = $t("profile.leaderboard.notRanked");
+    $: leaderboardRankNote = (rank) =>
+        $t("profile.leaderboard.yourRank", { rank });
+
+    $: rankedEntries = Array.isArray(leaderboard)
+        ? leaderboard.map((entry, index) => ({ ...entry, rank: index + 1 }))
+        : [];
+    $: userRankEntry = rankedEntries.find((entry) => String(entry.id) === String(user?.id)) ?? null;
+    $: comparisonEntries = (() => {
+        if (!rankedEntries.length) {
+            return [];
+        }
+        if (!userRankEntry) {
+            return rankedEntries.slice(0, 5);
+        }
+        const index = userRankEntry.rank - 1;
+        const start = Math.max(0, index - 2);
+        return rankedEntries.slice(start, start + 5);
+    })();
 </script>
 
 <main class="profile">
@@ -73,6 +129,60 @@
             </div>
         </section>
 
+        <section class="profile-leaderboard glass-panel">
+            <div class="leaderboard-header">
+                <h2>{leaderboardHeading}</h2>
+                <p>{leaderboardSubtitle}</p>
+            </div>
+            {#if comparisonEntries.length}
+                <div class="leaderboard-table-wrapper">
+                    <table>
+                        <colgroup>
+                            <col class="col-rank" />
+                            <col class="col-player" />
+                            <col class="col-rating" />
+                            <col class="col-record" />
+                            <col class="col-win" />
+                            <col class="col-puzzles" />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th scope="col" class="numeric">{leaderboardRankLabel}</th>
+                                <th scope="col">{leaderboardPlayerLabel}</th>
+                                <th scope="col" class="numeric">{leaderboardRatingLabel}</th>
+                                <th scope="col" class="numeric">{leaderboardRecordLabel}</th>
+                                <th scope="col" class="numeric">{leaderboardWinRateLabel}</th>
+                                <th scope="col" class="numeric">{leaderboardPuzzlesLabel}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {#each comparisonEntries as entry}
+                                <tr class:selected={String(entry.id) === String(user?.id)}>
+                                    <td class="numeric">{entry.rank}</td>
+                                    <th scope="row">{entry.username}</th>
+                                    <td class="numeric">{ratingValue(entry.rating) ?? "—"}</td>
+                                    <td class="numeric">{formatRecord(entry)}</td>
+                                    <td class="numeric">{formatWinRate(entry)}</td>
+                                    <td class="numeric">{formatPuzzleSummary(entry)}</td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
+                </div>
+                {#if userRankEntry}
+                    <p class="leaderboard-note">
+                        {leaderboardRankNote(userRankEntry.rank)}
+                    </p>
+                {:else}
+                    <p class="leaderboard-note subtle">{leaderboardNotRankedLabel}</p>
+                {/if}
+            {:else if isLeaderboardLoading}
+                <p class="leaderboard-note subtle">{leaderboardLoadingLabel}</p>
+            {:else}
+                <p class="leaderboard-note subtle">{leaderboardEmptyLabel}</p>
+            {/if}
+        </section>
+
         <section class="profile-form glass-panel">
             <h2>{updateHeading}</h2>
             <form on:submit|preventDefault={onSave}>
@@ -96,6 +206,7 @@
                     id="password"
                     name="password"
                     type="password"
+                    autocomplete="new-password"
                     placeholder={passwordPlaceholder}
                     value={profileDraft.password}
                     on:input={(event) =>
@@ -147,6 +258,90 @@
         display: flex;
         flex-direction: column;
         gap: 1.1rem;
+    }
+
+    .profile-leaderboard {
+        padding: clamp(1.5rem, 4vw, 2rem);
+        display: grid;
+        gap: 1rem;
+    }
+
+    .leaderboard-header h2 {
+        margin: 0;
+        color: #f8fafc;
+        font-size: 1.15rem;
+    }
+
+    .leaderboard-header p {
+        margin: 0.35rem 0 0;
+        color: rgba(226, 232, 240, 0.72);
+        font-size: 0.9rem;
+    }
+
+    .leaderboard-table-wrapper {
+        overflow-x: auto;
+    }
+
+    .profile-leaderboard .leaderboard-player {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .profile-leaderboard .leaderboard-player img {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        flex-shrink: 0;
+        background: rgba(148, 163, 184, 0.16);
+    }
+
+    .profile-leaderboard table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 520px;
+    }
+
+    .profile-leaderboard th,
+    .profile-leaderboard td {
+        padding: 0.55rem 0.75rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+        color: rgba(226, 232, 240, 0.85);
+        font-size: 0.9rem;
+        white-space: nowrap;
+    }
+
+    .profile-leaderboard thead th {
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        color: rgba(148, 163, 184, 0.78);
+        background: rgba(15, 23, 42, 0.55);
+    }
+
+    .profile-leaderboard tbody tr:last-child th,
+    .profile-leaderboard tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    .profile-leaderboard .numeric {
+        text-align: right;
+    }
+
+    .profile-leaderboard tr.selected {
+        background: rgba(59, 130, 246, 0.14);
+    }
+
+    .leaderboard-note {
+        margin: 0;
+        color: rgba(226, 232, 240, 0.75);
+        font-size: 0.85rem;
+    }
+
+    .leaderboard-note.subtle {
+        color: rgba(148, 163, 184, 0.7);
     }
 
     .identity {
@@ -217,8 +412,13 @@
         }
 
         .profile-card,
-        .profile-form {
+        .profile-form,
+        .profile-leaderboard {
             padding: 1.25rem;
+        }
+
+        .profile-leaderboard table {
+            min-width: 440px;
         }
     }
 </style>

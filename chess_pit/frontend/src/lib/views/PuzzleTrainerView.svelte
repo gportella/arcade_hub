@@ -782,6 +782,8 @@
   $: puzzleTitle = formatPuzzleName(session?.coolId);
   $: statusTone = errorMessage ? "error" : infoMessage ? "info" : hintMessage ? "hint" : "muted";
   $: statusText = errorMessage || infoMessage || hintMessage || "ready";
+  $: nextPuzzleLabel = $t("puzzles.controls.nextPuzzle");
+  $: retryPuzzleLabel = $t("puzzles.controls.retryPuzzle");
 </script>
 
 <section class="trainer">
@@ -836,6 +838,26 @@
         showStatus={false}
         showControls={false}
       />
+      {#if attemptFinished}
+        <div class="board-actions">
+          <button
+            type="button"
+            class="board-actions__next"
+            on:click={handleNextPuzzle}
+            disabled={loadingPuzzle}
+          >
+            {nextPuzzleLabel}
+          </button>
+          <button
+            type="button"
+            class="board-actions__retry"
+            on:click={handleRetryPuzzle}
+            disabled={loadingPuzzle}
+          >
+            {retryPuzzleLabel}
+          </button>
+        </div>
+      {/if}
     </section>
 
     <aside class="sidebar">
@@ -1069,6 +1091,50 @@
     transition: box-shadow 0.2s ease;
   }
 
+  .board-actions {
+    display: none;
+    margin-top: 0.85rem;
+    gap: 0.65rem;
+  }
+
+  .board-actions__next,
+  .board-actions__retry {
+    flex: 1 1 auto;
+    border-radius: 12px;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: transform 140ms ease, filter 140ms ease;
+  }
+
+  .board-actions__next {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: #f8fafc;
+  }
+
+  .board-actions__retry {
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    color: #e2e8f0;
+  }
+
+  .board-actions__next:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .board-actions__retry:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .board-actions__next:not(:disabled):hover,
+  .board-actions__retry:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+
   .board-panel:hover {
     box-shadow: 0 16px 32px rgba(15, 23, 42, 0.35);
   }
@@ -1096,6 +1162,10 @@
       gap: 0.75rem;
     }
 
+    .trainer__layout {
+      gap: 1rem;
+    }
+
     .trainer__actions {
       width: 100%;
       justify-content: space-between;
@@ -1107,6 +1177,75 @@
 
     .puzzle-meta__title {
       font-size: 1.15rem;
+    }
+  }
+
+  @media (max-width: 680px) {
+    .trainer {
+      padding: 0.85rem;
+      gap: 0.85rem;
+    }
+
+    .trainer__left {
+      gap: 0.1rem;
+    }
+
+    .trainer__layout {
+      gap: 0.85rem;
+    }
+
+    .board-panel {
+      padding: 0.75rem;
+    }
+
+    .board-actions {
+      display: flex;
+    }
+
+    .sidebar {
+      gap: 0.9rem;
+    }
+
+    .puzzle-meta {
+      gap: 0.35rem;
+      padding: 0.7rem 0.9rem;
+    }
+
+    .puzzle-meta__details {
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    :global(.score-card) {
+      padding: 1rem;
+      gap: 0.9rem;
+    }
+
+    :global(.score-card__grid) {
+      gap: 0.85rem;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+
+    :global(.controls) {
+      padding: 1rem;
+      gap: 0.85rem;
+    }
+
+    :global(.controls__row) {
+      gap: 0.65rem;
+    }
+
+    :global(.history) {
+      padding: 1rem;
+      gap: 0.8rem;
+    }
+
+    :global(.history__list) {
+      gap: 0.75rem;
+    }
+
+    :global(.history__item) {
+      padding: 0.75rem 0.85rem;
     }
   }
 </style>

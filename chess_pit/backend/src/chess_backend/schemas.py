@@ -80,6 +80,46 @@ class AdminUserMetrics(BaseModel):
         from_attributes = True
 
 
+class AdminGameSummary(BaseModel):
+    id: int
+    white_player_id: int
+    white_player_username: str
+    white_player_rating: Optional[int]
+    black_player_id: int
+    black_player_username: str
+    black_player_rating: Optional[int]
+    status: GameStatus
+    result: Optional[GameResult]
+    started_at: datetime
+    last_move_at: Optional[datetime]
+    moves_count: int
+    summary: str
+
+    class Config:
+        from_attributes = True
+
+
+class LeaderboardEntry(BaseModel):
+    id: int
+    username: str
+    avatar_url: Optional[str]
+    rating: int
+    games_played: int
+    games_won: int
+    games_lost: int
+    games_drawn: int
+    last_game_at: Optional[datetime]
+    last_activity_at: Optional[datetime]
+    win_rate: float
+    puzzles_attempted: int
+    puzzles_solved: int
+    puzzles_failed: int
+    last_puzzle_attempt_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
 class GameCreate(BaseModel):
     white_player_id: int
     black_player_id: int

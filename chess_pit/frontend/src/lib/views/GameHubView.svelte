@@ -58,6 +58,7 @@
     $: matchesHeading = $t("hub.section.matches");
     $: refreshLabel = $t("hub.actions.refresh");
     $: newLabel = $t("hub.actions.new");
+    $: newShortLabel = $t("hub.actions.newShort");
     $: closeLabel = $t("hub.actions.close");
     $: opponentLabel = $t("hub.form.opponent");
     $: colorLabelText = $t("hub.form.color");
@@ -69,7 +70,9 @@
     $: unknownLabel = $t("label.unknown");
     $: engineBadge = $t("label.engine");
     $: ratingValueLabel = $t("label.ratingValue");
-    $: toggleNewGameLabel = showNewGameForm ? closeLabel : newLabel;
+    $: toggleNewGameLabel = showNewGameForm
+        ? closeLabel
+        : newShortLabel || newLabel;
     $: userAlt = $t("avatar.label", { name: user?.nickname ?? "" });
     $: gamesTitle = $t("hub.header.title");
     $: depthLabel = $t("hub.form.depth");
@@ -105,6 +108,9 @@
     $: leaderboardLastActiveLabel = $t("hub.leaderboard.lastActive");
     $: leaderboardEmptyLabel = $t("hub.leaderboard.empty");
     $: leaderboardLoadingLabel = $t("hub.leaderboard.loading");
+    $: challengeHint = $t("hub.actions.newHint");
+    $: puzzlesHint = $t("hub.actions.puzzlesHint");
+    $: puzzlesShortLabel = $t("hub.actions.puzzlesShort") || puzzlesLabel;
 
     $: currentLocale = $locale;
 
@@ -616,15 +622,33 @@
             footnote={leaderboardFootnote}
         />
 
-    <section class="panel">
+        <section class="hub-cta">
+            <button
+                type="button"
+                class="cta-card challenge"
+                class:active={showNewGameForm}
+                aria-pressed={showNewGameForm}
+                title={challengeHint}
+                on:click={onToggleNewGameForm}
+            >
+                <span class="cta-title">{toggleNewGameLabel}</span>
+            </button>
+            <button
+                type="button"
+                class="cta-card puzzles"
+                title={puzzlesHint}
+                on:click={onOpenPuzzles}
+            >
+                <span class="cta-title">{puzzlesShortLabel}</span>
+            </button>
+        </section>
+
+        <section class="panel">
         <header class="panel-header">
             <h2>{matchesHeading}</h2>
             <div class="panel-actions">
                 <button type="button" class="micro" on:click={onRefreshGames}>
                     {refreshLabel}
-                </button>
-                <button type="button" class="micro engage" on:click={onToggleNewGameForm}>
-                    {toggleNewGameLabel}
                 </button>
             </div>
         </header>
@@ -656,75 +680,12 @@
                                         </option>
                                     {/each}
                                 </select>
-                            </div>
-                            <div class="field-block color-pick">
-                                <label for="color">{colorLabelText}</label>
-                                <select
-                                    id="color"
-                                    bind:value={newGameColor}
-                                    on:change={handleColorChange}
-                                >
-                                    <option value="white">{colorWhite}</option>
-                                    <option value="black">{colorBlack}</option>
-                                </select>
-                            </div>
-                        </div>
-                        {#if isEngineChallenge}
-                            <fieldset class="engine-mode">
-                                <legend>{engineModeLabel}</legend>
-                                <p class="hint">{engineModeHelp}</p>
-                                <div class="mode-toggle" role="radiogroup" aria-label={engineModeLabel}>
-                                    <label class="mode-pill" class:active={engineUsesDepth}>
-                                        <input
-                                            type="radio"
-                                            name="engine-mode"
-                                            value={ENGINE_MODE_DEPTH}
-                                            checked={engineUsesDepth}
-                                            on:change={() => onChangeEngineMode(ENGINE_MODE_DEPTH)}
-                                        />
-                                        <span>{engineModeDepthLabel}</span>
-                                    </label>
-                                    <label class="mode-pill" class:active={!engineUsesDepth}>
-                                        <input
-                                            type="radio"
-                                            name="engine-mode"
-                                            value={ENGINE_MODE_TIME}
-                                            checked={!engineUsesDepth}
-                                            on:change={() => onChangeEngineMode(ENGINE_MODE_TIME)}
-                                        />
-                                        <span>{engineModeTimeLabel}</span>
-                                    </label>
-                                </div>
-                            </fieldset>
-                        {/if}
-                    </section>
-                    <section class="field-stack emphasis">
-                        {#if engineUsesDepth}
-                            <div class="depth-field">
-                                <label for="engine-depth">{depthLabel}</label>
-                                <input
-                                    id="engine-depth"
-                                    name="engine-depth"
-                                    type="number"
-                                    min="1"
-                                    max={selectedEngine?.max_depth ?? 64}
-                                    step="1"
-                                    value={newGameDepth}
-                                    placeholder={depthPlaceholder}
-                                    on:input={(event) =>
-                                        onChangeDepth(
-                                            /** @type {HTMLInputElement} */ (
-                                                event.currentTarget
-                                            ).value,
-                                        )
-                                    }
-                                />
                                 <p class="hint">{depthHelp}</p>
                                 {#if depthHint}
                                     <p class="hint muted">{depthHint}</p>
                                 {/if}
                             </div>
-                        {/if}
+                        </div>
                         {#if showTimeControls}
                             <fieldset class="time-card">
                                 <legend>{timeInitialLabel}</legend>
@@ -1134,6 +1095,78 @@
         margin: 0.25rem 0 0;
         color: rgba(148, 163, 184, 0.9);
         font-size: 0.88rem;
+    }
+
+    .hub-cta {
+        display: flex;
+        justify-content: center;
+        align-items: stretch;
+        gap: 0.85rem;
+        margin: 1.25rem 0 0.85rem;
+        flex-wrap: nowrap;
+    }
+
+    .cta-card {
+        position: relative;
+        border: none;
+        border-radius: 0.75rem;
+        padding: 0.95rem 1.2rem 1.3rem 1.05rem;
+        min-height: 3.6rem;
+        flex: 1 1 170px;
+        max-width: 220px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: 0.55rem;
+        font-size: 0.92rem;
+        font-weight: 700;
+        color: #f8fafc;
+        background: #0f172a;
+        border: 1px solid rgba(30, 41, 59, 0.75);
+        box-shadow: 0 6px 12px rgba(7, 10, 20, 0.26);
+        cursor: pointer;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+        overflow: visible;
+        isolation: isolate;
+    }
+
+    .cta-card .cta-title {
+        position: relative;
+        z-index: 3;
+        text-transform: none;
+        letter-spacing: 0.01em;
+        font-size: 0.92rem;
+        line-height: 1.1;
+    }
+
+    .cta-card.challenge {
+        border-color: rgba(34, 197, 94, 0.32);
+        background: #18281f;
+        box-shadow: 0 10px 16px rgba(34, 197, 94, 0.14);
+    }
+
+    .cta-card.puzzles {
+        border-color: rgba(129, 140, 248, 0.32);
+        background: #1b2142;
+        box-shadow: 0 10px 16px rgba(129, 140, 248, 0.14);
+    }
+
+    .cta-card:hover,
+    .cta-card:focus-visible {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 20px rgba(15, 23, 42, 0.24);
+        filter: brightness(1.005);
+    }
+
+    .cta-card:focus-visible {
+        outline: 2px solid rgba(248, 250, 252, 0.78);
+        outline-offset: 3px;
+    }
+
+    .cta-card.active {
+        box-shadow: 0 24px 44px rgba(30, 64, 175, 0.35);
+        filter: brightness(1.03);
     }
 
     .panel {

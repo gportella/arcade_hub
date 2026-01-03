@@ -135,8 +135,8 @@
     td {
         padding: 0.5rem 0.7rem;
         border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-        color: rgba(226, 232, 240, 0.85);
-        font-size: 0.85rem;
+        color: rgba(226, 232, 240, 0.88);
+        font-size: 0.92rem;
         white-space: nowrap;
     }
 
@@ -155,6 +155,9 @@
 
     .numeric {
         text-align: right;
+        font-size: 0.95rem;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.01em;
     }
 
     .leaderboard-player {

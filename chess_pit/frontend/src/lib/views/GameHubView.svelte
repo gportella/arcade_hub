@@ -516,7 +516,7 @@
                     {adminLabel}
                 </button>
             {/if}
-            <button type="button" class="micro secondary" on:click={onOpenPuzzles}>
+            <button type="button" class="micro engage" on:click={onOpenPuzzles}>
                 {puzzlesLabel}
             </button>
             <button type="button" class="micro" on:click={onLogout}>
@@ -559,7 +559,12 @@
                             {adminLabel}
                         </button>
                     {/if}
-                    <button type="button" role="menuitem" on:click={() => runMenuAction(onOpenPuzzles)}>
+                    <button
+                        type="button"
+                        class="engage"
+                        role="menuitem"
+                        on:click={() => runMenuAction(onOpenPuzzles)}
+                    >
                         {puzzlesLabel}
                     </button>
                     <button type="button" role="menuitem" on:click={() => runMenuAction(onLogout)}>
@@ -594,7 +599,7 @@
                 <button type="button" class="micro" on:click={onRefreshGames}>
                     {refreshLabel}
                 </button>
-                <button type="button" class="micro" on:click={onToggleNewGameForm}>
+                <button type="button" class="micro engage" on:click={onToggleNewGameForm}>
                     {toggleNewGameLabel}
                 </button>
             </div>
@@ -789,7 +794,7 @@
                     </section>
                 </div>
                 <footer class="new-game-actions">
-                    <button type="submit">{launchLabel}</button>
+                    <button type="submit" class="engage">{launchLabel}</button>
                 </footer>
             </form>
         {/if}
@@ -1737,6 +1742,39 @@
     .micro {
         padding: 0.45em 0.9em;
         font-size: 0.85rem;
+    }
+
+    .engage {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        background: linear-gradient(135deg, #ff299b 0%, #c084fc 55%, #2563eb 100%);
+        color: #fdf4ff;
+        border: none;
+    }
+
+    .engage:hover {
+        background: linear-gradient(135deg, #ff3aa6 0%, #ca8dfc 55%, #3b82f6 100%);
+    }
+
+    .engage:focus-visible {
+        outline: 3px solid rgba(192, 132, 252, 0.55);
+        outline-offset: 4px;
+    }
+
+    .engage:disabled {
+        opacity: 0.8;
+        cursor: not-allowed;
+    }
+
+    .action-menu button.engage {
+        text-align: center;
+    }
+
+    .action-menu button.engage:hover,
+    .action-menu button.engage:focus {
+        background: linear-gradient(135deg, #ff45af 0%, #d09bff 55%, #4f8df9 100%);
     }
 
     @media (max-width: 640px) {

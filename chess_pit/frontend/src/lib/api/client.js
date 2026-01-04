@@ -99,6 +99,13 @@ export async function fetchAdminUserGames(userId, token) {
     return handleResponse(response);
 }
 
+export async function fetchCurrentUser(token) {
+    const response = await fetch(`${API_BASE}/users/me`, {
+        headers: buildJsonHeaders(token),
+    });
+    return handleResponse(response);
+}
+
 export async function fetchGameDetail(gameId, token) {
     const response = await fetch(`${API_BASE}/games/${gameId}`, {
         headers: buildJsonHeaders(token),

@@ -19,6 +19,7 @@
     analyzeGameSequence,
     updateUser,
     resignGame,
+    fetchCurrentUser,
     connectToGame,
     fetchAdminUsers,
     fetchAdminUserGames,
@@ -854,9 +855,19 @@
         hubError = tr("errors.loadHub");
         return false;
       }
-      const userPayload = hubPayload.user && typeof hubPayload.user === "object" ? hubPayload.user : null;
+      let userPayload = hubPayload.user && typeof hubPayload.user === "object" ? hubPayload.user : null;
       if (!userPayload) {
-        console.error("Hub payload missing user data", hub);
+        console.warn("Hub payload missing user data; attempting fallback fetch");
+        try {
+          const fallback = await fetchCurrentUser(accessToken);
+          if (fallback && typeof fallback === "object") {
+            userPayload = fallback;
+          }
+        } catch (userError) {
+          console.error("Failed to fetch current user fallback", userError);
+        }
+      }
+      if (!userPayload) {
         hubError = tr("errors.loadHub");
         return false;
       }

@@ -181,6 +181,7 @@ export class MainGame extends Scene {
         this.trophySprite = null;
         this.trophyBaseScale = 1;
         this.winText = null;
+        this.pendingResize = false;
     }
 
     preload() {
@@ -327,6 +328,7 @@ export class MainGame extends Scene {
 
         this.winCelebrationTimer = null;
         this.winCelebrateTweens = [];
+        this.pendingResize = false;
         this.resetWinCelebration();
 
         const pushableCells = level.pushables || [];
@@ -381,6 +383,10 @@ export class MainGame extends Scene {
         }
 
         this.scaleResizeHandler = () => {
+            if (this.isCelebratingWin()) {
+                this.pendingResize = true;
+                return;
+            }
             this.scene.restart({ levelId: this.levelId });
         };
         if (this.scale) {
@@ -592,6 +598,27 @@ export class MainGame extends Scene {
             this.trophySprite.setAlpha(1);
             const baseScale = this.trophyBaseScale || 1;
             this.trophySprite.setScale(baseScale);
+        }
+        this.applyPendingResizeIfNeeded();
+    }
+
+    isCelebratingWin() {
+        if (!this.hasWon) return false;
+        if (this.winCelebrationTimer) return true;
+        if (this.trophySprite && this.trophySprite.visible) return true;
+        if (this.winText && this.winText.visible) return true;
+        return false;
+    }
+
+    applyPendingResizeIfNeeded() {
+        if (!this.pendingResize) return;
+        if (this.isCelebratingWin()) return;
+        const currentLevelId = this.levelId;
+        this.pendingResize = false;
+        if (currentLevelId) {
+            this.scene.restart({ levelId: currentLevelId });
+        } else {
+            this.scene.restart();
         }
     }
 
@@ -942,11 +969,12 @@ export class MainGame extends Scene {
             }
 
             if (targetNextId) {
-                const holdDuration = 14000;
+                const holdDuration = 7000;
                 console.log("Scheduling next level", { nextId: targetNextId, holdDuration });
                 this.winCelebrationTimer = this.time.delayedCall(holdDuration, () => {
                     this.winCelebrationTimer = null;
                     console.log("Celebration hold complete, loading next level", targetNextId);
+                    this.pendingResize = false;
                     if (this.eventHandlers?.loadLevel) {
                         this.eventHandlers.loadLevel(targetNextId);
                     } else {

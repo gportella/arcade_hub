@@ -1,13 +1,15 @@
 <script>
+  import { resolveAssetPath } from "../utils/assets";
+
   export let level = "";
   export let title = "";
   export let subtitle = "";
   export let celebrating = false;
 
   const TROPHY_SOURCES = {
-    gold: "/assets/trophy_03_gold.png",
-    silver: "/assets/trophy_03_silver.png",
-    bronze: "/assets/trophy_03_bronze.png",
+    gold: resolveAssetPath("assets/trophy_03_gold.png"),
+    silver: resolveAssetPath("assets/trophy_03_silver.png"),
+    bronze: resolveAssetPath("assets/trophy_03_bronze.png"),
   };
 
   $: iconSource = TROPHY_SOURCES[level] || TROPHY_SOURCES.bronze;

@@ -108,11 +108,24 @@
 
   @media (max-width: 680px) {
     .board-panel {
-      padding: 0.75rem;
+      padding: 0;
+      border-radius: 14px;
+      background: transparent;
+      border: none;
+    }
+
+    .board-panel :global(.chess-widget) {
+      width: calc(100% + 1.3rem);
+      margin-inline: -0.65rem;
+    }
+
+    .board-panel:hover {
+      box-shadow: none;
     }
 
     .board-actions {
       display: flex;
+      margin-top: 0.75rem;
     }
   }
 </style>

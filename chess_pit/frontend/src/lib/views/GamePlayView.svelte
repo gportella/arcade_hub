@@ -1069,8 +1069,9 @@
     .board-section {
         display: flex;
         flex-direction: column;
-        align-items: center;
+        align-items: stretch;
         gap: 0.75rem;
+        width: 100%;
     }
 
     .clock-panel {
@@ -1378,8 +1379,12 @@
 
     @media (max-width: 640px) {
         .play {
-            padding-inline: 1rem;
-            gap: 1rem;
+            padding-inline: 0.65rem;
+            gap: 0.85rem;
+        }
+
+        .play-body {
+            margin-inline: 0;
         }
 
         .play-header {
@@ -1416,12 +1421,19 @@
         }
 
         .board-section {
-            gap: 0.65rem;
+            gap: 0.6rem;
+        }
+
+        .board-section :global(.chess-widget) {
+            width: calc(100% + 1.3rem);
+            margin-inline: -0.65rem;
         }
 
         .board-controls {
             width: 100%;
             justify-content: space-between;
+            margin-inline: 0;
+            padding-inline: 0.65rem;
         }
 
         .ghost {

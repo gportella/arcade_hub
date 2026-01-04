@@ -205,14 +205,13 @@
     color: #bbf7d0;
   }
 
-  .next {
-    align-self: flex-start;
-    background: linear-gradient(130deg, #22c55e, #16a34a);
-    color: #fff;
-  }
-
   .retry {
     flex: 1 1 auto;
+  }
+
+  .next {
+    background: linear-gradient(130deg, #22c55e, #16a34a);
+    color: #fff;
   }
 
   .controls__row--complete {
@@ -238,7 +237,8 @@
     }
 
     .controls__row--complete {
-      display: none;
+      flex-direction: column;
+      align-items: stretch;
     }
 
     button,

@@ -138,8 +138,9 @@
 <style>
     .hub-leaderboard {
         display: grid;
-        gap: 0.9rem;
-        padding: 1.2rem 1.35rem;
+        gap: 0.7rem;
+        padding: 0.45rem 0.48rem 0.55rem;
+        overflow: hidden;
     }
 
     .leaderboard-header h2 {
@@ -156,6 +157,8 @@
 
     .leaderboard-table-wrapper {
         overflow-x: auto;
+        margin-inline: 0;
+        padding-inline: clamp(0.55rem, 2.4vw, 0.85rem);
     }
 
     table {
@@ -166,7 +169,7 @@
 
     th,
     td {
-        padding: 0.5rem 0.7rem;
+        padding: 0.42rem 0.48rem;
         border-bottom: 1px solid rgba(148, 163, 184, 0.18);
         color: rgba(226, 232, 240, 0.88);
         font-size: 0.92rem;
@@ -263,18 +266,24 @@
         width: 9rem;
     }
 
-    @media (max-width: 640px) {
+    @media (min-width: 900px) {
         .hub-leaderboard {
-            padding: 1rem;
+            padding-inline: clamp(0.45rem, 1.6vw, 1rem);
         }
 
+        .leaderboard-table-wrapper {
+            padding-inline: clamp(0.85rem, 2.5vw, 1.35rem);
+        }
+    }
+
+    @media (max-width: 640px) {
         table {
             min-width: 480px;
         }
 
         th,
         td {
-            padding: 0.45rem 0.55rem;
+            padding: 0.35rem 0.42rem;
         }
 
         .leaderboard-player {
@@ -284,6 +293,10 @@
         .leaderboard-player img {
             width: 22px;
             height: 22px;
+        }
+
+        .leaderboard-table-wrapper {
+            padding-inline: 0.5rem;
         }
     }
 </style>

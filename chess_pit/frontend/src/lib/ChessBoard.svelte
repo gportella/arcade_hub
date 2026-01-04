@@ -1287,7 +1287,7 @@
         box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
         border-radius: 1rem;
         overflow: hidden;
-    }
+        }
 
     .board-annotation {
         position: absolute;
@@ -1438,6 +1438,27 @@
         border-radius: 999px;
         padding: 2px 8px;
         pointer-events: none;
+    
+            @media (max-width: 860px) {
+                .board {
+                    width: 100%;
+                }
+            }
+    
+            @media (max-width: 680px) {
+                .board {
+                    margin-inline: 0;
+                    border-radius: 0.85rem;
+                    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.18);
+                }
+            }
+    
+            @media (max-width: 520px) {
+                .board {
+                    border-radius: 0.25rem;
+                    box-shadow: none;
+                }
+            }
         margin-left: auto;
     }
 

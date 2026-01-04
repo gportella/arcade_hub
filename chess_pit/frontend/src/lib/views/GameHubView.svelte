@@ -1062,19 +1062,13 @@
 <style>
     .hub {
         width: 100%;
-        max-width: 1040px;
+        max-width: min(100%, 1680px);
         display: flex;
         flex-direction: column;
         gap: 1.5rem;
         margin: 0 auto;
-        padding: 0.85rem 1.2rem 2rem;
-    }
-
-    @media (min-width: 1200px) {
-        .hub {
-            max-width: 1280px;
-            padding-inline: 2.3rem;
-        }
+        padding-block: clamp(0.4rem, 1.4vw, 0.7rem) 1.95rem;
+        padding-inline: clamp(0.25rem, 2.2vw, 1.2rem);
     }
 
     .hub-header {
@@ -1242,10 +1236,10 @@
     .panel {
         display: flex;
         flex-direction: column;
-        gap: 1.25rem;
-        padding: 1.5rem;
+        gap: 1.2rem;
+        padding: clamp(0.95rem, 1vw + 0.65rem, 1.3rem);
         background: rgba(15, 23, 42, 0.45);
-        border-radius: 1rem;
+        border-radius: 0.9rem;
     }
 
     @media (max-width: 540px) {
@@ -1570,12 +1564,12 @@
 
     .game-sections {
         display: grid;
-        gap: 1.5rem;
+        gap: 1.2rem;
     }
 
     .game-section {
         display: grid;
-        gap: 0.9rem;
+        gap: 0.75rem;
     }
 
     .is-collapsed {
@@ -1611,15 +1605,15 @@
 
     .archive-groups {
         display: grid;
-        gap: 1.1rem;
+        gap: 1rem;
     }
 
     .game-group {
         display: grid;
-        gap: 0.75rem;
-        padding: 0.75rem 0.9rem;
+        gap: 0.7rem;
+        padding: 0.7rem 0.9rem;
         border-radius: 1rem;
-        background: rgba(15, 23, 42, 0.35);
+        background: rgba(15, 23, 42, 0.32);
         border: 1px solid rgba(96, 165, 250, 0.12);
     }
 
@@ -1637,13 +1631,13 @@
 
     .opponent-groups {
         display: grid;
-        gap: 0.9rem;
+        gap: 0.8rem;
     }
 
     .opponent-group {
         display: grid;
-        gap: 0.55rem;
-        padding: 0.55rem 0.65rem;
+        gap: 0.5rem;
+        padding: 0.5rem 0.65rem;
         border-radius: 0.85rem;
         background: rgba(15, 23, 42, 0.25);
         border: 1px solid rgba(148, 163, 184, 0.12);
@@ -1730,7 +1724,7 @@
     .game-list {
         display: flex;
         flex-direction: column;
-        gap: 0.85rem;
+        gap: 0.75rem;
     }
 
     .game-list.compact {
@@ -1741,10 +1735,10 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0.9rem 1.1rem;
-        border-radius: 18px;
+        padding: 0.78rem 0.95rem;
+        border-radius: 14px;
         border: 1px solid transparent;
-        background: rgba(15, 23, 42, 0.55);
+        background: rgba(15, 23, 42, 0.5);
         color: inherit;
         text-align: left;
         cursor: pointer;
@@ -1917,12 +1911,13 @@
 
     @media (max-width: 640px) {
         .hub {
-            padding-inline: 1rem;
+            padding-inline: clamp(0.2rem, 4.25vw, 0.55rem);
         }
 
         .panel {
-            padding: 1.1rem;
-            gap: 1rem;
+            padding: 0.5rem 0.56rem 0.72rem;
+            gap: 0.72rem;
+            border-radius: 0.68rem;
         }
 
         .panel-header {
@@ -1950,6 +1945,62 @@
             display: flex;
             width: 100%;
             justify-content: space-between;
+        }
+
+        .game-sections {
+            gap: 0.65rem;
+        }
+
+        .game-section {
+            gap: 0.38rem;
+        }
+
+        .game-section-header {
+            padding-inline: 0.05rem;
+        }
+
+        .game-count {
+            min-width: 1.9rem;
+            font-size: 0.7rem;
+        }
+
+        .game-list {
+            gap: 0.42rem;
+            margin-inline: -0.2rem;
+        }
+
+        .game-card {
+            padding: 0.58rem 0.68rem;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.44);
+        }
+
+        .archive-groups {
+            gap: 0.42rem;
+            margin-inline: -0.22rem;
+        }
+
+        .game-group {
+            padding: 0.15rem 0.18rem 0.4rem;
+            border-radius: 0;
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid rgba(71, 85, 105, 0.28);
+        }
+
+        .game-group:last-child {
+            border-bottom: none;
+        }
+
+        .opponent-groups {
+            gap: 0.35rem;
+        }
+
+        .opponent-group {
+            padding: 0.12rem 0.2rem 0.28rem;
+            border-radius: 0;
+            background: transparent;
+            border: none;
         }
     }
 </style>

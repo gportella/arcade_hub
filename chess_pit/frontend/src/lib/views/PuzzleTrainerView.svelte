@@ -979,6 +979,13 @@
     celebrating={celebrationActive}
   />
 
+  <PuzzleRewards
+    celebrating={celebrationActive}
+    currentPoints={currentPoints}
+    maxPoints={maxPoints}
+    timesSolved={timesSolved}
+  />
+
   <div class="trainer__layout">
     <PuzzleBoardPanel
       startingFen={session?.baseFen ?? null}
@@ -997,12 +1004,6 @@
     />
 
     <aside class="sidebar">
-      <PuzzleRewards
-        celebrating={celebrationActive}
-        currentPoints={currentPoints}
-        timesSolved={timesSolved}
-      />
-
       <PuzzleScoreCard
         coolId={session?.coolId ?? ""}
         difficulty={session?.difficulty ?? selectedDifficulty}
@@ -1085,48 +1086,48 @@
 
   @media (max-width: 680px) {
     .trainer {
-      padding: 0.85rem;
-      gap: 0.85rem;
+      padding: 0.45rem;
+      gap: 0.65rem;
     }
 
     .trainer__layout {
-      gap: 0.85rem;
+      gap: 0.65rem;
     }
 
     .sidebar {
-      gap: 0.9rem;
+      gap: 0.75rem;
     }
 
     :global(.score-card) {
-      padding: 1rem;
-      gap: 0.9rem;
+      padding: 0.85rem;
+      gap: 0.75rem;
     }
 
     :global(.score-card__grid) {
-      gap: 0.85rem;
+      gap: 0.7rem;
       grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     }
 
     :global(.controls) {
-      padding: 1rem;
-      gap: 0.85rem;
+      padding: 0.85rem;
+      gap: 0.7rem;
     }
 
     :global(.controls__row) {
-      gap: 0.65rem;
+      gap: 0.55rem;
     }
 
     :global(.history) {
-      padding: 1rem;
-      gap: 0.8rem;
+      padding: 0.85rem;
+      gap: 0.65rem;
     }
 
     :global(.history__list) {
-      gap: 0.75rem;
+      gap: 0.6rem;
     }
 
     :global(.history__item) {
-      padding: 0.75rem 0.85rem;
+      padding: 0.65rem 0.75rem;
     }
   }
 </style>

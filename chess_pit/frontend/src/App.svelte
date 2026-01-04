@@ -878,7 +878,11 @@
         : [];
       rawSummaryIndex = new Map();
       uiSummaryIndex = new Map();
-      for (const summary of hub.games) {
+      const hubSummaries = Array.isArray(hub.games) ? hub.games : [];
+      if (!Array.isArray(hub.games) && hub?.games != null) {
+        console.warn("Hub payload provided non-array games data", hub.games);
+      }
+      for (const summary of hubSummaries) {
         rawSummaryIndex.set(summary.id, summary);
         uiSummaryIndex.set(summary.id, mapGameSummary(summary));
       }

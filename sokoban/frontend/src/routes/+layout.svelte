@@ -1,5 +1,6 @@
 <svelte:head>
-    <title>Phaser Svelte Template</title>
+    <title>SokoCam</title>
+    <meta name="description" content="SokoCam — a playful Sokoban adventure for puzzle fans." />
 </svelte:head>
 
 <div class="layout-root">

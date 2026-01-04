@@ -182,6 +182,10 @@ export class MainGame extends Scene {
         this.trophyBaseScale = 1;
         this.winText = null;
         this.pendingResize = false;
+        this.floorLayer = null;
+        this.backdropLayer = null;
+        this.backgroundDecor = [];
+        this.backgroundDecorTweens = [];
     }
 
     preload() {
@@ -241,9 +245,7 @@ export class MainGame extends Scene {
             rows: derivedRows
         };
 
-        const gridRight = this.grid.ox + this.grid.cols * this.grid.size;
-        const gridBottom = this.grid.oy + this.grid.rows * this.grid.size;
-        drawGrid(this, this.grid.size, this.grid.ox, this.grid.oy, gridRight, gridBottom);
+        this.buildPlayfieldBackdrop(gridWidthPx, gridHeightPx);
 
         this.ensureWallTextureVariants();
 
@@ -449,6 +451,15 @@ export class MainGame extends Scene {
             if (this.winText) {
                 this.winText.destroy();
                 this.winText = null;
+            }
+            if (this.floorLayer) {
+                this.floorLayer.destroy();
+                this.floorLayer = null;
+            }
+            this.clearBackdropDecor();
+            if (this.backdropLayer) {
+                this.backdropLayer.destroy();
+                this.backdropLayer = null;
             }
         });
 
@@ -1112,6 +1123,451 @@ export class MainGame extends Scene {
 
         this.registry.set(PLAYER_LAST_VARIANT_KEY, chosen.id);
         return chosen;
+    }
+
+    buildPlayfieldBackdrop(gridWidthPx, gridHeightPx) {
+        if (this.backdropLayer) {
+            this.backdropLayer.destroy();
+            this.backdropLayer = null;
+        }
+        if (this.floorLayer) {
+            this.floorLayer.destroy();
+            this.floorLayer = null;
+        }
+
+        if (this.cameras?.main?.setBackgroundColor) {
+            this.cameras.main.setBackgroundColor(0x05070b);
+        }
+
+        const screenWidth = this.scale.width;
+        const screenHeight = this.scale.height;
+        const pixelUnit = Math.max(4, Math.floor(Math.min(screenWidth, screenHeight) / 160));
+
+        const backdrop = this.add.graphics();
+        backdrop.setDepth(-620);
+        backdrop.fillStyle(0x020305, 1);
+        backdrop.fillRect(0, 0, screenWidth, screenHeight);
+
+        const palette = [0x05080f, 0x07111d, 0x091828, 0x0b1f33, 0x0d253e];
+        for (let y = 0; y < screenHeight; y += pixelUnit) {
+            for (let x = 0; x < screenWidth; x += pixelUnit) {
+                const shade = palette[Math.floor(Math.random() * palette.length)] || 0x05080f;
+                const alpha = 0.68 + Math.random() * 0.22;
+                backdrop.fillStyle(shade, alpha);
+                backdrop.fillRect(x, y, pixelUnit, pixelUnit);
+            }
+        }
+
+        const grainPasses = Math.max(240, Math.floor((screenWidth * screenHeight) / Math.max(1, pixelUnit * 280)));
+        for (let i = 0; i < grainPasses; i++) {
+            const grainX = Math.random() * screenWidth;
+            const grainY = Math.random() * screenHeight;
+            const grainSize = pixelUnit * (0.35 + Math.random() * 0.6);
+            const grainColor = Math.random() < 0.5 ? 0x0f1724 : 0x111f33;
+            const grainAlpha = 0.28 + Math.random() * 0.28;
+            backdrop.fillStyle(grainColor, grainAlpha);
+            backdrop.fillRect(grainX, grainY, grainSize, grainSize);
+        }
+
+        backdrop.fillStyle(0x02060c, 0.78);
+        backdrop.fillEllipse(
+            screenWidth / 2,
+            screenHeight / 2,
+            Math.max(screenWidth * 0.92, gridWidthPx + this.grid.size * 14),
+            Math.max(screenHeight * 0.88, gridHeightPx + this.grid.size * 12)
+        );
+        backdrop.fillStyle(0x0a1524, 0.42);
+        backdrop.fillEllipse(
+            screenWidth / 2,
+            screenHeight / 2,
+            Math.max(screenWidth * 0.68, gridWidthPx + this.grid.size * 6),
+            Math.max(screenHeight * 0.6, gridHeightPx + this.grid.size * 6)
+        );
+
+        const skullZones = this.computeGapZones(gridWidthPx, gridHeightPx);
+        const fallbackSkullZones = [
+            {
+                minX: pixelUnit * 6,
+                maxX: screenWidth / 3,
+                minY: pixelUnit * 6,
+                maxY: screenHeight - pixelUnit * 6
+            },
+            {
+                minX: screenWidth * (2 / 3),
+                maxX: screenWidth - pixelUnit * 6,
+                minY: pixelUnit * 6,
+                maxY: screenHeight - pixelUnit * 6
+            },
+            {
+                minX: pixelUnit * 6,
+                maxX: screenWidth - pixelUnit * 6,
+                minY: pixelUnit * 6,
+                maxY: screenHeight / 3
+            }
+        ];
+        const placementZones = skullZones.length ? skullZones : fallbackSkullZones;
+        const skullCount = Math.min(placementZones.length, 3);
+        const skullScaleBase = Math.max(1.6, Math.min(3.6, this.grid.size / 24));
+
+        for (let i = 0; i < skullCount; i++) {
+            const zone = placementZones[i];
+            if (!zone) continue;
+            const spanX = Math.max(1, zone.maxX - zone.minX);
+            const spanY = Math.max(1, zone.maxY - zone.minY);
+            const centerX = zone.minX + spanX * (0.25 + Math.random() * 0.5);
+            const centerY = zone.minY + spanY * (0.25 + Math.random() * 0.5);
+            const skullScaleJitter = skullScaleBase * (0.85 + Math.random() * 0.4);
+            this.drawPixelSkull(backdrop, centerX, centerY, pixelUnit, skullScaleJitter);
+        }
+
+        this.backdropLayer = backdrop;
+
+        const floor = this.add.graphics();
+        floor.setDepth(-400);
+        floor.fillStyle(0x151e2b, 1);
+        floor.fillRect(this.grid.ox, this.grid.oy, gridWidthPx, gridHeightPx);
+
+        const tileSize = Math.max(12, Math.floor(this.grid.size * 0.6));
+        floor.fillStyle(0x283752, 0.45);
+        for (let y = this.grid.oy - tileSize; y <= this.grid.oy + gridHeightPx + tileSize; y += tileSize) {
+            for (let x = this.grid.ox - tileSize; x <= this.grid.ox + gridWidthPx + tileSize; x += tileSize) {
+                const offset = (Math.floor((x + y) / tileSize) % 2) === 0 ? 1 : -1;
+                const patchSize = tileSize * 0.42;
+                floor.fillRect(x + offset * patchSize * 0.5, y + offset * patchSize * 0.5, patchSize, patchSize);
+            }
+        }
+
+        const borderThickness = Math.max(4, Math.floor(this.grid.size * 0.1));
+        floor.lineStyle(borderThickness, 0x0b101a, 0.9);
+        floor.strokeRect(this.grid.ox, this.grid.oy, gridWidthPx, gridHeightPx);
+        floor.lineStyle(Math.max(2, Math.floor(borderThickness * 0.5)), 0x3cc5ff, 0.55);
+        floor.strokeRect(
+            this.grid.ox + borderThickness * 0.4,
+            this.grid.oy + borderThickness * 0.4,
+            gridWidthPx - borderThickness * 0.8,
+            gridHeightPx - borderThickness * 0.8
+        );
+        this.floorLayer = floor;
+
+        this.createBackdropDecor(gridWidthPx, gridHeightPx);
+    }
+
+    drawPixelSkull(graphics, centerX, centerY, pixelUnit, scale = 1) {
+        if (!graphics || typeof graphics.fillRect !== "function") {
+            return;
+        }
+
+        const pattern = [
+            "....1111....",
+            "...133331...",
+            "..13333331..",
+            ".1333223331.",
+            ".1333223331.",
+            ".1333333331.",
+            "..13333331..",
+            "...133331...",
+            "...1....1...",
+            "..11....11.."
+        ];
+        const colorMap = {
+            "1": { color: 0x0c1829, alpha: 0.95 },
+            "2": { color: 0x03060b, alpha: 0.92 },
+            "3": { color: 0x1c2a43, alpha: 0.88 }
+        };
+
+        const blockSize = pixelUnit * Math.max(1, scale);
+        const skullWidth = pattern[0]?.length || 0;
+        const skullHeight = pattern.length;
+        const originX = centerX - (skullWidth * blockSize) / 2;
+        const originY = centerY - (skullHeight * blockSize) / 2;
+
+        pattern.forEach((rowStr, rowIndex) => {
+            for (let colIndex = 0; colIndex < rowStr.length; colIndex++) {
+                const code = rowStr[colIndex];
+                const spec = colorMap[code];
+                if (!spec) continue;
+                const x = originX + colIndex * blockSize;
+                const y = originY + rowIndex * blockSize;
+                graphics.fillStyle(spec.color, spec.alpha);
+                graphics.fillRect(x, y, blockSize, blockSize);
+            }
+        });
+
+        if (Math.random() > 0.4) {
+            const crackAlpha = 0.32 + Math.random() * 0.18;
+            graphics.fillStyle(0x142238, crackAlpha);
+            const crackWidth = blockSize * (2 + Math.random() * 2);
+            const crackHeight = blockSize * (pattern.length * 0.6);
+            graphics.fillRect(centerX - crackWidth / 2, centerY - crackHeight / 2, crackWidth, crackHeight);
+        }
+    }
+
+    clearBackdropDecor() {
+        if (this.backgroundDecorTweens && this.backgroundDecorTweens.length) {
+            this.backgroundDecorTweens.forEach((tween) => {
+                if (!tween) return;
+                if (typeof tween.remove === "function") {
+                    tween.remove();
+                } else if (typeof tween.stop === "function") {
+                    tween.stop();
+                }
+            });
+        }
+        this.backgroundDecorTweens = [];
+        if (this.backgroundDecor && this.backgroundDecor.length) {
+            this.backgroundDecor.forEach((obj) => obj?.destroy());
+        }
+        this.backgroundDecor = [];
+    }
+
+    createBackdropDecor(gridWidthPx, gridHeightPx) {
+        this.clearBackdropDecor();
+
+        const externalCells = this.getExternalGroundCells();
+        if (externalCells.length) {
+            this.createInteriorSparkles(externalCells);
+        }
+
+        const gapZones = this.computeGapZones(gridWidthPx, gridHeightPx);
+        if (!gapZones.length) {
+            return;
+        }
+
+        const activeZoneNames = gapZones.map(zone => zone.name);
+        this.createStaticSparkles(gridWidthPx, gridHeightPx, activeZoneNames);
+    }
+
+    computeGapZones(gridWidthPx, gridHeightPx) {
+        const isWideGapLeft = this.grid.ox > this.grid.size * 1.5;
+        const isWideGapRight = (this.scale.width - (this.grid.ox + gridWidthPx)) > this.grid.size * 1.5;
+        const isTallGapTop = this.grid.oy > this.grid.size * 1.5;
+        const isTallGapBottom = (this.scale.height - (this.grid.oy + gridHeightPx)) > this.grid.size * 1.5;
+        const gapZones = [];
+
+        if (isWideGapLeft) {
+            gapZones.push({
+                name: "left",
+                minX: Math.max(24, this.grid.ox - this.grid.size * 2.4),
+                maxX: Math.max(24, this.grid.ox - this.grid.size * 0.8),
+                minY: Math.max(24, this.grid.oy - this.grid.size * (isTallGapTop ? 0.4 : 0)),
+                maxY: Math.min(this.scale.height - 24, this.grid.oy + gridHeightPx + this.grid.size * (isTallGapBottom ? 0.4 : 0))
+            });
+        }
+
+        if (isWideGapRight) {
+            gapZones.push({
+                name: "right",
+                minX: Math.min(this.scale.width - 24, this.grid.ox + gridWidthPx + this.grid.size * 0.8),
+                maxX: Math.min(this.scale.width - 24, this.grid.ox + gridWidthPx + this.grid.size * 2.4),
+                minY: Math.max(24, this.grid.oy - this.grid.size * (isTallGapTop ? 0.4 : 0)),
+                maxY: Math.min(this.scale.height - 24, this.grid.oy + gridHeightPx + this.grid.size * (isTallGapBottom ? 0.4 : 0))
+            });
+        }
+
+        if (isTallGapTop) {
+            gapZones.push({
+                name: "top",
+                minX: Math.max(24, this.grid.ox - this.grid.size * 0.6),
+                maxX: Math.min(this.scale.width - 24, this.grid.ox + gridWidthPx + this.grid.size * 0.6),
+                minY: Math.max(24, this.grid.oy - this.grid.size * 2.4),
+                maxY: Math.max(24, this.grid.oy - this.grid.size * 0.7)
+            });
+        }
+
+        if (isTallGapBottom) {
+            gapZones.push({
+                name: "bottom",
+                minX: Math.max(24, this.grid.ox - this.grid.size * 0.6),
+                maxX: Math.min(this.scale.width - 24, this.grid.ox + gridWidthPx + this.grid.size * 0.6),
+                minY: Math.min(this.scale.height - 24, this.grid.oy + gridHeightPx + this.grid.size * 0.7),
+                maxY: Math.min(this.scale.height - 24, this.grid.oy + gridHeightPx + this.grid.size * 2.4)
+            });
+        }
+
+        return gapZones;
+    }
+
+    getExternalGroundCells() {
+        if (!this.grid || !this.levelConfig) {
+            return [];
+        }
+
+        const cols = this.grid.cols;
+        const rows = this.grid.rows;
+        if (!(cols > 0 && rows > 0)) {
+            return [];
+        }
+
+        const maskRows = Array.isArray(this.levelConfig.wallMask) ? this.levelConfig.wallMask : null;
+        if (!maskRows || !maskRows.length) {
+            return [];
+        }
+
+        const isWall = (col, row) => {
+            if (col < 0 || col >= cols || row < 0 || row >= rows) {
+                return false;
+            }
+            const maskRow = maskRows[row] || "";
+            const symbol = maskRow[col] || "0";
+            return symbol === "1" || symbol === "#" || symbol === "X";
+        };
+
+        const accessibleKeys = new Set();
+        const start = this.levelConfig.player || { col: 1, row: 1 };
+        const startCol = Math.max(0, Math.min(cols - 1, Math.floor(start.col ?? 0)));
+        const startRow = Math.max(0, Math.min(rows - 1, Math.floor(start.row ?? 0)));
+        if (!isWall(startCol, startRow)) {
+            const stack = [{ col: startCol, row: startRow }];
+            while (stack.length) {
+                const { col, row } = stack.pop();
+                const key = `${col},${row}`;
+                if (accessibleKeys.has(key) || isWall(col, row)) {
+                    continue;
+                }
+                accessibleKeys.add(key);
+                stack.push({ col: col + 1, row });
+                stack.push({ col: col - 1, row });
+                stack.push({ col, row: row + 1 });
+                stack.push({ col, row: row - 1 });
+            }
+        }
+
+        const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
+        const stack = [];
+
+        for (let col = 0; col < cols; col++) {
+            if (!isWall(col, 0)) {
+                visited[0][col] = true;
+                stack.push({ col, row: 0 });
+            }
+            if (!isWall(col, rows - 1)) {
+                visited[rows - 1][col] = true;
+                stack.push({ col, row: rows - 1 });
+            }
+        }
+
+        for (let row = 1; row < rows - 1; row++) {
+            if (!isWall(0, row) && !visited[row][0]) {
+                visited[row][0] = true;
+                stack.push({ col: 0, row });
+            }
+            if (!isWall(cols - 1, row) && !visited[row][cols - 1]) {
+                visited[row][cols - 1] = true;
+                stack.push({ col: cols - 1, row });
+            }
+        }
+
+        while (stack.length) {
+            const { col, row } = stack.pop();
+            const neighbors = [
+                { col: col + 1, row },
+                { col: col - 1, row },
+                { col, row: row + 1 },
+                { col, row: row - 1 }
+            ];
+            neighbors.forEach(neighbor => {
+                if (neighbor.col < 0 || neighbor.col >= cols || neighbor.row < 0 || neighbor.row >= rows) {
+                    return;
+                }
+                if (visited[neighbor.row][neighbor.col]) {
+                    return;
+                }
+                if (isWall(neighbor.col, neighbor.row)) {
+                    return;
+                }
+                visited[neighbor.row][neighbor.col] = true;
+                stack.push(neighbor);
+            });
+        }
+
+        const results = [];
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+                const key = `${col},${row}`;
+                if (isWall(col, row)) {
+                    continue;
+                }
+                if (!visited[row][col]) {
+                    continue;
+                }
+                if (accessibleKeys.has(key)) {
+                    continue;
+                }
+                results.push({ col, row });
+            }
+        }
+        return results;
+    }
+
+    createInteriorSparkles(cells) {
+        if (!Array.isArray(cells) || !cells.length) {
+            return;
+        }
+
+        cells.forEach(({ col, row }) => {
+            const sparkleCount = 5;
+            for (let i = 0; i < sparkleCount; i++) {
+                const offsetX = (Math.random() - 0.5) * this.grid.size * 0.6;
+                const offsetY = (Math.random() - 0.5) * this.grid.size * 0.6;
+                const baseX = this.grid.ox + (col + 0.5) * this.grid.size + offsetX;
+                const baseY = this.grid.oy + (row + 0.5) * this.grid.size + offsetY;
+                const radius = Math.max(2, Math.floor(this.grid.size * (0.08 + Math.random() * 0.04)));
+                const sparkle = this.add.ellipse(baseX, baseY, radius * 2, radius * 2, 0x8bd8ff, 0.38);
+                sparkle.setDepth(-330);
+                sparkle.setAlpha(0.32 + Math.random() * 0.18);
+                sparkle.setBlendMode("ADD");
+                this.backgroundDecor.push(sparkle);
+            }
+        });
+    }
+
+    createStaticSparkles(gridWidthPx, gridHeightPx, activeZoneNames = []) {
+        if (!Array.isArray(activeZoneNames) || activeZoneNames.length === 0) return;
+
+        const zoneMap = {
+            left: {
+                minX: Math.max(24, this.grid.ox - this.grid.size * 2.4),
+                maxX: Math.max(24, Math.min(this.scale.width - 24, this.grid.ox - this.grid.size * 0.7)),
+                minY: Math.max(24, this.grid.oy - this.grid.size),
+                maxY: Math.min(this.scale.height - 24, this.grid.oy + gridHeightPx + this.grid.size)
+            },
+            right: {
+                minX: Math.min(this.scale.width - 24, Math.max(24, this.grid.ox + gridWidthPx + this.grid.size * 0.7)),
+                maxX: Math.min(this.scale.width - 24, this.grid.ox + gridWidthPx + this.grid.size * 2.4),
+                minY: Math.max(24, this.grid.oy - this.grid.size),
+                maxY: Math.min(this.scale.height - 24, this.grid.oy + gridHeightPx + this.grid.size)
+            },
+            top: {
+                minX: Math.max(24, this.grid.ox - this.grid.size * 0.5),
+                maxX: Math.min(this.scale.width - 24, this.grid.ox + gridWidthPx + this.grid.size * 0.5),
+                minY: Math.max(24, this.grid.oy - this.grid.size * 2.2),
+                maxY: Math.max(24, this.grid.oy - this.grid.size * 0.6)
+            },
+            bottom: {
+                minX: Math.max(24, this.grid.ox - this.grid.size * 0.5),
+                maxX: Math.min(this.scale.width - 24, this.grid.ox + gridWidthPx + this.grid.size * 0.5),
+                minY: Math.min(this.scale.height - 24, this.grid.oy + gridHeightPx + this.grid.size * 0.6),
+                maxY: Math.min(this.scale.height - 24, this.grid.oy + gridHeightPx + this.grid.size * 2.2)
+            }
+        };
+
+        activeZoneNames.forEach(zoneName => {
+            const zone = zoneMap[zoneName];
+            if (!zone) return;
+            if (!(zone.maxX > zone.minX && zone.maxY > zone.minY)) return;
+
+            const sparkleCount = 6;
+            for (let i = 0; i < sparkleCount; i++) {
+                const x = zone.minX + Math.random() * (zone.maxX - zone.minX);
+                const y = zone.minY + Math.random() * (zone.maxY - zone.minY);
+                const radius = Math.max(2, Math.floor(this.grid.size * (0.1 + Math.random() * 0.05)));
+                const sparkle = this.add.ellipse(x, y, radius * 2, radius * 2, 0x8bd8ff, 0.45);
+                sparkle.setDepth(-360);
+                sparkle.setAlpha(0.35 + Math.random() * 0.18);
+                sparkle.setBlendMode("ADD");
+                this.backgroundDecor.push(sparkle);
+            }
+        });
     }
 
     preloadEnvironmentAssets() {

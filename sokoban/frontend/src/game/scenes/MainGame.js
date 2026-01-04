@@ -5,6 +5,10 @@ import { WorldBuilder } from "../world/WorldBuilder.js";
 import { PushableBox } from "../entities/PushableBox.js";
 import { TargetManager } from "../entities/TargetManager.js";
 import { LEVELS, getDefaultLevelId, getLevelById, getLevelProgress, getNextLevelId, getPreviousLevelId } from "../levels/index.js";
+import wallTextureUrl from "../assets/texture_2.png";
+import pushableTextureUrl from "../assets/barrell.png";
+import targetTextureUrl from "../assets/texture_3.png";
+import trophyTextureUrl from "../assets/trophy_03_gold.png";
 
 const WALL_TEXTURE_KEY = "wallTexture";
 const PUSHABLE_TEXTURE_KEY = "pushableBarrel";
@@ -57,6 +61,8 @@ const WALL_TEXTURE_VARIANTS = [
     }
 ];
 const WALL_TEXTURE_VARIANT_KEYS = WALL_TEXTURE_VARIANTS.map(variant => variant.key);
+const PLAYER_LAYER_ASSET_MAP = import.meta.glob("../assets/figures/lpc_entry/png/walkcycle/*.png", { eager: true, import: "default" });
+const PLAYER_LAYER_ASSET_PREFIX = "../assets/figures/lpc_entry/png/walkcycle/";
 
 /**
  * @typedef {Object} LevelGridConfig
@@ -1082,15 +1088,14 @@ export class MainGame extends Scene {
 
     preloadEnvironmentAssets() {
         const assets = [
-            { key: WALL_TEXTURE_KEY, file: "../assets/texture_2.png" },
-            { key: PUSHABLE_TEXTURE_KEY, file: "../assets/barrell.png" },
-            { key: TARGET_TEXTURE_KEY, file: "../assets/texture_3.png" },
-            { key: TROPHY_TEXTURE_KEY, file: "../assets/trophy_03_gold.png" }
+            { key: WALL_TEXTURE_KEY, url: wallTextureUrl },
+            { key: PUSHABLE_TEXTURE_KEY, url: pushableTextureUrl },
+            { key: TARGET_TEXTURE_KEY, url: targetTextureUrl },
+            { key: TROPHY_TEXTURE_KEY, url: trophyTextureUrl }
         ];
 
-        assets.forEach(({ key, file }) => {
+        assets.forEach(({ key, url }) => {
             if (this.textures.exists(key)) return;
-            const url = new URL(file, import.meta.url).href;
             this.load.image(key, url);
         });
     }
@@ -1193,11 +1198,15 @@ export class MainGame extends Scene {
     }
 
     preloadPlayerAssets() {
-        const basePath = "../assets/figures/lpc_entry/png/walkcycle";
         PLAYER_LAYER_LIBRARY.forEach(spec => {
             if (this.textures.exists(spec.key)) return;
-            const url = new URL(`${basePath}/${spec.file}`, import.meta.url).href;
-            this.load.spritesheet(spec.key, url, { frameWidth: PLAYER_FRAME_SIZE, frameHeight: PLAYER_FRAME_SIZE });
+            const assetKey = `${PLAYER_LAYER_ASSET_PREFIX}${spec.file}`;
+            const resolvedUrl = PLAYER_LAYER_ASSET_MAP[assetKey];
+            if (!resolvedUrl) {
+                console.warn("Missing player layer asset", spec.file);
+                return;
+            }
+            this.load.spritesheet(spec.key, resolvedUrl, { frameWidth: PLAYER_FRAME_SIZE, frameHeight: PLAYER_FRAME_SIZE });
         });
     }
 

@@ -848,9 +848,21 @@
     if (!accessToken) return false;
     try {
       const hub = await fetchHubOverview(accessToken);
-      currentUser = hub.user;
-      availableEngines = Array.isArray(hub.engines)
-        ? hub.engines.map((engine) => {
+      const hubPayload = hub && typeof hub === "object" ? hub : null;
+      if (!hubPayload) {
+        console.error("Hub payload missing or invalid", hub);
+        hubError = tr("errors.loadHub");
+        return false;
+      }
+      const userPayload = hubPayload.user && typeof hubPayload.user === "object" ? hubPayload.user : null;
+      if (!userPayload) {
+        console.error("Hub payload missing user data", hub);
+        hubError = tr("errors.loadHub");
+        return false;
+      }
+      currentUser = userPayload;
+      availableEngines = Array.isArray(hubPayload.engines)
+        ? hubPayload.engines.map((engine) => {
             const maxDepth =
               typeof engine.max_depth === "number" && Number.isFinite(engine.max_depth)
                 ? Math.max(1, Math.min(64, Math.round(engine.max_depth)))
@@ -868,8 +880,8 @@
             };
           })
         : [];
-      availableOpponents = Array.isArray(hub.opponents)
-        ? hub.opponents.map(toOpponent).sort((a, b) => {
+      availableOpponents = Array.isArray(hubPayload.opponents)
+        ? hubPayload.opponents.map(toOpponent).sort((a, b) => {
             if (a.isEngine !== b.isEngine) {
               return a.isEngine ? 1 : -1;
             }
@@ -878,9 +890,9 @@
         : [];
       rawSummaryIndex = new Map();
       uiSummaryIndex = new Map();
-      const hubSummaries = Array.isArray(hub.games) ? hub.games : [];
-      if (!Array.isArray(hub.games) && hub?.games != null) {
-        console.warn("Hub payload provided non-array games data", hub.games);
+      const hubSummaries = Array.isArray(hubPayload.games) ? hubPayload.games : [];
+      if (!Array.isArray(hubPayload.games) && hubPayload.games != null) {
+        console.warn("Hub payload provided non-array games data", hubPayload.games);
       }
       for (const summary of hubSummaries) {
         rawSummaryIndex.set(summary.id, summary);
@@ -888,7 +900,7 @@
       }
       games = Array.from(uiSummaryIndex.values());
       profileDraft = {
-        avatarUrl: hub.user.avatar_url || "",
+        avatarUrl: userPayload.avatar_url || "",
         password: "",
       };
       return true;

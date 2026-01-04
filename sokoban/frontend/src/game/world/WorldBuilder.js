@@ -9,21 +9,43 @@ export class WorldBuilder {
 
     build(config) {
         const color = config.color || 0x888888;
+        const singleTextureKey = typeof config.wallTextureKey === "string" && this.scene.textures?.exists(config.wallTextureKey)
+            ? config.wallTextureKey
+            : null;
+        const arrayTextureKeys = Array.isArray(config.wallTextureKeys)
+            ? config.wallTextureKeys.filter(key => this.scene.textures?.exists(key))
+            : [];
+        const textureChoices = arrayTextureKeys.length > 0
+            ? arrayTextureKeys
+            : (singleTextureKey ? [singleTextureKey] : []);
 
         const addCell = (col, row, c) => {
             const key = `${col},${row}`;
             if (this.blocked.has(key)) return;
             const pos = this.toXY(col, row);
-            const rect = this.scene.add.rectangle(pos.x, pos.y, this.grid.size, this.grid.size, c || color).setOrigin(0);
-            rect.setDepth(-200);
-            this.scene.physics.add.existing(rect, true); // static
-            const body = rect.body;
+            let textureKey = null;
+            if (textureChoices.length) {
+                const mix = ((col * 73856093) ^ (row * 19349663)) >>> 0;
+                textureKey = textureChoices[mix % textureChoices.length];
+            }
+
+            const wall = textureKey
+                ? this.scene.add.image(pos.x, pos.y, textureKey).setOrigin(0)
+                : this.scene.add.rectangle(pos.x, pos.y, this.grid.size, this.grid.size, c || color).setOrigin(0);
+
+            if (textureKey) {
+                wall.setDisplaySize(this.grid.size, this.grid.size);
+            }
+
+            wall.setDepth(-200);
+            this.scene.physics.add.existing(wall, true); // static
+            const body = wall.body;
             if (body) {
                 body.setSize(this.grid.size, this.grid.size, false);
                 body.setOffset(0, 0);
                 body.updateFromGameObject?.();
             }
-            this.obstacles.push(rect);
+            this.obstacles.push(wall);
             this.blocked.add(key);
         };
 

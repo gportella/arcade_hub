@@ -4,7 +4,59 @@ import { EventBus } from "../EventBus";
 import { WorldBuilder } from "../world/WorldBuilder.js";
 import { PushableBox } from "../entities/PushableBox.js";
 import { TargetManager } from "../entities/TargetManager.js";
-import { getDefaultLevelId, getLevelById, getLevelProgress, getNextLevelId, getPreviousLevelId } from "../levels/index.js";
+import { LEVELS, getDefaultLevelId, getLevelById, getLevelProgress, getNextLevelId, getPreviousLevelId } from "../levels/index.js";
+
+const WALL_TEXTURE_KEY = "wallTexture";
+const PUSHABLE_TEXTURE_KEY = "pushableBarrel";
+const TARGET_TEXTURE_KEY = "targetTexture";
+const TROPHY_TEXTURE_KEY = "winTrophy";
+const WALL_TEXTURE_VARIANTS = [
+    {
+        key: "wallTextureVar0",
+        overlayColor: 0x4f5d73,
+        overlayAlpha: 0.18,
+        highlightAlpha: 0.14,
+        shadowAlpha: 0.26,
+        crackColor: 0x0d131f,
+        crackAlpha: 0.16,
+        speckColor: 0xffffff,
+        speckAlpha: 0.06
+    },
+    {
+        key: "wallTextureVar1",
+        overlayColor: 0x7a674f,
+        overlayAlpha: 0.22,
+        highlightAlpha: 0.12,
+        shadowAlpha: 0.28,
+        crackColor: 0x1f120d,
+        crackAlpha: 0.16,
+        speckColor: 0xf4e4c1,
+        speckAlpha: 0.08
+    },
+    {
+        key: "wallTextureVar2",
+        overlayColor: 0x3e6658,
+        overlayAlpha: 0.2,
+        highlightAlpha: 0.1,
+        shadowAlpha: 0.24,
+        crackColor: 0x0c140f,
+        crackAlpha: 0.18,
+        speckColor: 0xd9f2de,
+        speckAlpha: 0.07
+    },
+    {
+        key: "wallTextureVar3",
+        overlayColor: 0x675c85,
+        overlayAlpha: 0.18,
+        highlightAlpha: 0.13,
+        shadowAlpha: 0.27,
+        crackColor: 0x1b1429,
+        crackAlpha: 0.17,
+        speckColor: 0xe4dcff,
+        speckAlpha: 0.08
+    }
+];
+const WALL_TEXTURE_VARIANT_KEYS = WALL_TEXTURE_VARIANTS.map(variant => variant.key);
 
 /**
  * @typedef {Object} LevelGridConfig
@@ -31,11 +83,12 @@ const STORAGE_KEY = "sokoban.currentLevel";
 
 const PLAYER_FRAME_SIZE = 64;
 const PLAYER_FRAMES_PER_DIRECTION = 9;
+// Skeleton sheet rows appear in order: up, left, down, right.
 const PLAYER_DIRECTION_ROW_INDEX = new Map([
-    ["down", 0],
+    ["down", 2],
     ["left", 1],
-    ["right", 2],
-    ["up", 3]
+    ["right", 3],
+    ["up", 0]
 ]);
 const PLAYER_DIRECTIONS = Array.from(PLAYER_DIRECTION_ROW_INDEX.keys());
 
@@ -117,10 +170,16 @@ export class MainGame extends Scene {
         this.requestedLevelId = data && typeof data.levelId === "string" ? data.levelId : null;
         this.playerVariantId = null;
         this.playerVariantLayers = null;
+        this.winCelebrationTimer = null;
+        this.winCelebrateTweens = [];
+        this.trophySprite = null;
+        this.trophyBaseScale = 1;
+        this.winText = null;
     }
 
     preload() {
         this.preloadPlayerAssets();
+        this.preloadEnvironmentAssets();
     }
 
     create() {
@@ -139,7 +198,7 @@ export class MainGame extends Scene {
         this.levelId = level.id;
         this.levelName = level.name;
         this.hasWon = false;
-        this.nextLevelId = getNextLevelId(this.levelId);
+        this.nextLevelId = this.resolveNextLevelId();
         this.prevLevelId = getPreviousLevelId(this.levelId);
         writeStoredLevelId(this.levelId);
 
@@ -179,6 +238,8 @@ export class MainGame extends Scene {
         const gridBottom = this.grid.oy + this.grid.rows * this.grid.size;
         drawGrid(this, this.grid.size, this.grid.ox, this.grid.oy, gridRight, gridBottom);
 
+        this.ensureWallTextureVariants();
+
         // const g = this.add.graphics();
         // g.fillStyle(0x4caf50, 1).fillRect(0, 0, size, size);
         // g.lineStyle(2, 0x1b5e20, 1).strokeRect(0, 0, size, size);
@@ -202,7 +263,9 @@ export class MainGame extends Scene {
             contour: level.contour !== undefined ? level.contour : true,
             obstacles: level.obstacles || [],
             wallMask: level.wallMask || [],
-            color: level.wallColor || 0x888888
+            color: level.wallColor || 0x888888,
+            wallTextureKey: WALL_TEXTURE_KEY,
+            wallTextureKeys: this.getWallTextureVariants()
         };
         const world = new WorldBuilder(this, this.grid).build(worldConfig);
         this.world = world;
@@ -214,17 +277,54 @@ export class MainGame extends Scene {
         world.getObstacleObjects().forEach(obj => this.physics.add.collider(this.box, obj));
 
         const targetCells = level.targets || [];
-        this.targets = new TargetManager(this, this.grid, targetCells);
-        this.winText = this.add.text(this.scale.width / 2, 24, "Well done!", { fontFamily: "Arial", fontSize: "32px", color: "#ffffff" })
+        this.targets = new TargetManager(this, this.grid, targetCells, TARGET_TEXTURE_KEY);
+
+        if (this.trophySprite) {
+            this.trophySprite.destroy();
+        }
+        if (this.winText) {
+            this.winText.destroy();
+        }
+
+        const celebrationCenterY = this.grid.oy + (this.grid.rows * this.grid.size) / 2;
+        const trophySize = this.grid.size * 2.4;
+        this.trophySprite = this.textures.exists(TROPHY_TEXTURE_KEY)
+            ? this.add.image(this.scale.width / 2, celebrationCenterY - this.grid.size * 0.4, TROPHY_TEXTURE_KEY)
+                .setOrigin(0.5, 1)
+                .setDepth(980)
+                .setVisible(false)
+            : null;
+        if (this.trophySprite) {
+            this.trophySprite.setDisplaySize(trophySize, trophySize);
+            this.trophyBaseScale = this.trophySprite.scale;
+        } else {
+            this.trophyBaseScale = 1;
+        }
+
+        const celebrationFontSize = Math.max(48, Math.round(this.grid.size * 1.2));
+        this.winText = this.add.text(
+            this.scale.width / 2,
+            celebrationCenterY + this.grid.size * 0.12,
+            "Well done!!",
+            {
+                fontFamily: "Arial Black",
+                fontSize: `${celebrationFontSize}px`,
+                color: "#ffde59",
+                stroke: "#3b2500",
+                strokeThickness: Math.max(4, Math.round(celebrationFontSize * 0.12)),
+                align: "center"
+            }
+        )
             .setOrigin(0.5, 0)
-            .setDepth(600)
+            .setDepth(990)
             .setVisible(false);
 
+        this.winCelebrationTimer = null;
+        this.winCelebrateTweens = [];
+        this.resetWinCelebration();
+
         const pushableCells = level.pushables || [];
-        this.pushables = pushableCells.map((cell, index) => {
-            const textureKey = `pushBoxTexture${index}`;
-            return new PushableBox(this, this.grid, textureKey, this.grid.size, cell);
-        });
+        this.pushables = pushableCells.map((cell) => new PushableBox(this, this.grid, PUSHABLE_TEXTURE_KEY, this.grid.size, cell));
 
         const playerCell = level.player || { col: 1, row: 1 };
         this.boxCell = { col: playerCell.col, row: playerCell.row };
@@ -253,14 +353,15 @@ export class MainGame extends Scene {
         };
 
         this.box.on("pointerdown", this.pointerHandlers.boxDown);
-        this.input.on("pointermove", this.pointerHandlers.move);
-        this.input.on("pointerup", this.pointerHandlers.up);
-        this.input.on("pointerupoutside", this.pointerHandlers.upOutside);
+        this.input.on("pointermove", this.pointerHandlers.move, this);
+        this.input.on("pointerup", this.pointerHandlers.up, this);
+        this.input.on("pointerupoutside", this.pointerHandlers.upOutside, this);
         this.input.on("pointerdown", this.onGlobalPointerDown, this);
         this.input.on("pointerup", this.onGlobalPointerUp, this);
         this.input.on("pointerupoutside", this.onGlobalPointerUp, this);
 
         this.input.topOnly = false;
+        this.input.enabled = true;
         if (this.input.setPollAlways) {
             this.input.setPollAlways();
         }
@@ -282,44 +383,38 @@ export class MainGame extends Scene {
 
         this.swipeState = null;
 
-        const progress = getLevelProgress(this.levelId);
-        EventBus.emit("level-changed", {
-            id: this.levelId,
-            name: this.levelName,
-            index: progress.index,
-            total: progress.total,
-            hasNext: !!this.nextLevelId,
-            hasPrev: !!this.prevLevelId,
-            nextId: this.nextLevelId,
-            prevId: this.prevLevelId
-        });
-        EventBus.emit("current-scene-ready", this);
-
         this.eventHandlers = {
             restart: () => this.scene.restart({ levelId: this.levelId }),
             loadLevel: (requestedId) => {
                 if (typeof requestedId === "string" && requestedId.length > 0) {
+                    console.log("loadLevel handler invoked", { requestedId });
                     this.scene.restart({ levelId: requestedId });
                 }
-            }
+            },
+            requestState: () => this.emitLevelChanged()
         };
 
         EventBus.on("request-restart", this.eventHandlers.restart);
         EventBus.on("request-load-level", this.eventHandlers.loadLevel);
+        EventBus.on("request-level-state", this.eventHandlers.requestState);
+
+        this.emitLevelChanged();
+        EventBus.emit("current-scene-ready", this);
 
         this.events.once("shutdown", () => {
             if (this.eventHandlers) {
                 EventBus.off("request-restart", this.eventHandlers.restart);
                 EventBus.off("request-load-level", this.eventHandlers.loadLevel);
+                EventBus.off("request-level-state", this.eventHandlers.requestState);
             }
             if (this.box && this.pointerHandlers?.boxDown) {
                 this.box.off("pointerdown", this.pointerHandlers.boxDown);
             }
             if (this.input) {
                 if (this.pointerHandlers) {
-                    this.input.off("pointermove", this.pointerHandlers.move);
-                    this.input.off("pointerup", this.pointerHandlers.up);
-                    this.input.off("pointerupoutside", this.pointerHandlers.upOutside);
+                    this.input.off("pointermove", this.pointerHandlers.move, this);
+                    this.input.off("pointerup", this.pointerHandlers.up, this);
+                    this.input.off("pointerupoutside", this.pointerHandlers.upOutside, this);
                 }
                 this.input.off("pointerdown", this.onGlobalPointerDown, this);
                 this.input.off("pointerup", this.onGlobalPointerUp, this);
@@ -330,6 +425,19 @@ export class MainGame extends Scene {
             }
             this.pointerHandlers = null;
             this.swipeState = null;
+            this.clearWinCelebrationTweens();
+            if (this.winCelebrationTimer) {
+                this.winCelebrationTimer.remove();
+                this.winCelebrationTimer = null;
+            }
+            if (this.trophySprite) {
+                this.trophySprite.destroy();
+                this.trophySprite = null;
+            }
+            if (this.winText) {
+                this.winText.destroy();
+                this.winText = null;
+            }
         });
 
         const keyDirections = {
@@ -387,7 +495,7 @@ export class MainGame extends Scene {
 
     onPointerDown(pointer) {
         const active = this.getActivePointer(pointer);
-        this.preventPointerDefault(active);
+        if (active) this.preventPointerDefault(active);
         this.pointerActive = true;
         this.activePointerId = active ? active.id : null;
         if (this.swipeState && this.swipeState.id === this.activePointerId) {
@@ -446,6 +554,74 @@ export class MainGame extends Scene {
     commandPointer(pointer) {
         const cell = this.pointToCell(pointer.worldX, pointer.worldY);
         this.setBoxCell(cell.col, cell.row, this.pointerCode);
+    }
+
+    clearWinCelebrationTweens() {
+        if (this.winCelebrateTweens && this.winCelebrateTweens.length) {
+            this.winCelebrateTweens.forEach(tween => {
+                if (!tween) return;
+                if (typeof tween.remove === "function") {
+                    tween.remove();
+                } else if (typeof tween.stop === "function") {
+                    tween.stop();
+                }
+            });
+        }
+        this.winCelebrateTweens = [];
+    }
+
+    resetWinCelebration() {
+        this.clearWinCelebrationTweens();
+        if (this.winCelebrationTimer) {
+            this.winCelebrationTimer.remove();
+            this.winCelebrationTimer = null;
+        }
+        if (this.winText) {
+            this.winText.setVisible(false);
+            this.winText.setAlpha(1);
+            this.winText.setScale(1);
+        }
+        if (this.trophySprite) {
+            this.trophySprite.setVisible(false);
+            this.trophySprite.setAlpha(1);
+            const baseScale = this.trophyBaseScale || 1;
+            this.trophySprite.setScale(baseScale);
+        }
+    }
+
+    resolveNextLevelId() {
+        let nextId = getNextLevelId(this.levelId);
+        if (nextId && nextId !== this.levelId) return nextId;
+
+        const currentIndex = LEVELS.findIndex(level => level.id === this.levelId);
+        if (currentIndex >= 0 && currentIndex + 1 < LEVELS.length) {
+            const candidate = LEVELS[currentIndex + 1].id;
+            if (candidate && candidate !== this.levelId) {
+                return candidate;
+            }
+        }
+
+        const defaultId = getDefaultLevelId();
+        if (defaultId && defaultId !== this.levelId) {
+            return defaultId;
+        }
+
+        return null;
+    }
+
+    emitLevelChanged() {
+        if (!this.levelId) return;
+        const progress = getLevelProgress(this.levelId);
+        EventBus.emit("level-changed", {
+            id: this.levelId,
+            name: this.levelName,
+            index: progress.index,
+            total: progress.total,
+            hasNext: !!this.nextLevelId,
+            hasPrev: !!this.prevLevelId,
+            nextId: this.nextLevelId,
+            prevId: this.prevLevelId
+        });
     }
 
     preventPointerDefault(pointer) {
@@ -709,19 +885,72 @@ export class MainGame extends Scene {
         const solved = this.targets.areAllOccupied(this.pushables);
         if (solved && !this.hasWon) {
             this.hasWon = true;
-            if (this.winText) this.winText.setVisible(true);
-            console.log("Well done!");
-            const nextId = getNextLevelId(this.levelId);
-            EventBus.emit("level-complete", { id: this.levelId, name: this.levelName, nextId });
+            if (this.input) {
+                this.input.enabled = false;
+            }
+            if (!Array.isArray(this.winCelebrateTweens)) {
+                this.winCelebrateTweens = [];
+            }
+            this.resetWinCelebration();
+            if (this.trophySprite) {
+                this.trophySprite.setVisible(true);
+                this.trophySprite.setAlpha(0);
+                this.trophySprite.setScale((this.trophyBaseScale || 1) * 0.7);
+                const trophyTween = this.tweens.add({
+                    targets: this.trophySprite,
+                    alpha: 1,
+                    scale: this.trophyBaseScale || 1,
+                    ease: "Sine.Out",
+                    duration: 3600
+                });
+                this.winCelebrateTweens.push(trophyTween);
+            }
+            if (this.winText) {
+                this.winText.setVisible(true);
+                this.winText.setAlpha(0);
+                this.winText.setScale(0.86);
+                const textTween = this.tweens.add({
+                    targets: this.winText,
+                    alpha: 1,
+                    scale: 1,
+                    ease: "Sine.Out",
+                    duration: 4200,
+                    delay: 400
+                });
+                this.winCelebrateTweens.push(textTween);
+            }
 
-            if (nextId) {
-                this.time.delayedCall(900, () => {
-                    this.scene.restart({ levelId: nextId });
+            const targetNextId = this.resolveNextLevelId();
+            console.log("Well done!!", {
+                current: this.levelId,
+                next: targetNextId,
+                trophy: !!this.trophySprite,
+                text: !!this.winText
+            });
+            const eventNextId = targetNextId && targetNextId !== this.levelId ? targetNextId : null;
+            EventBus.emit("level-complete", { id: this.levelId, name: this.levelName, nextId: eventNextId });
+
+            if (this.winCelebrationTimer) {
+                this.winCelebrationTimer.remove();
+                this.winCelebrationTimer = null;
+            }
+
+            if (targetNextId) {
+                const holdDuration = 14000;
+                console.log("Scheduling next level", { nextId: targetNextId, holdDuration });
+                this.winCelebrationTimer = this.time.delayedCall(holdDuration, () => {
+                    this.winCelebrationTimer = null;
+                    console.log("Celebration hold complete, loading next level", targetNextId);
+                    if (this.eventHandlers?.loadLevel) {
+                        this.eventHandlers.loadLevel(targetNextId);
+                    } else {
+                        this.scene.restart({ levelId: targetNextId });
+                    }
                 });
             }
         } else if (!solved) {
             this.hasWon = false;
-            if (this.winText) this.winText.setVisible(false);
+            this.resetWinCelebration();
         }
     }
 
@@ -849,6 +1078,118 @@ export class MainGame extends Scene {
 
         this.registry.set(PLAYER_LAST_VARIANT_KEY, chosen.id);
         return chosen;
+    }
+
+    preloadEnvironmentAssets() {
+        const assets = [
+            { key: WALL_TEXTURE_KEY, file: "../assets/texture_2.png" },
+            { key: PUSHABLE_TEXTURE_KEY, file: "../assets/barrell.png" },
+            { key: TARGET_TEXTURE_KEY, file: "../assets/texture_3.png" },
+            { key: TROPHY_TEXTURE_KEY, file: "../assets/trophy_03_gold.png" }
+        ];
+
+        assets.forEach(({ key, file }) => {
+            if (this.textures.exists(key)) return;
+            const url = new URL(file, import.meta.url).href;
+            this.load.image(key, url);
+        });
+    }
+
+    ensureWallTextureVariants() {
+        if (!this.textures.exists(WALL_TEXTURE_KEY)) return;
+        if (!this.grid) return;
+
+        const size = this.grid.size;
+
+        WALL_TEXTURE_VARIANTS.forEach((variant) => {
+            const existing = this.textures.exists(variant.key) ? this.textures.get(variant.key) : null;
+            const source = existing?.getSourceImage?.();
+            if (source && source.width === size && source.height === size) {
+                return;
+            }
+            if (existing) {
+                this.textures.remove(variant.key);
+            }
+
+            const renderTexture = this.make.renderTexture({ width: size, height: size, add: false }, false);
+
+            const baseTile = this.add.image(0, 0, WALL_TEXTURE_KEY).setOrigin(0);
+            baseTile.setDisplaySize(size, size);
+            renderTexture.draw(baseTile);
+            baseTile.destroy();
+
+            if (variant.overlayAlpha > 0) {
+                const overlay = this.make.graphics({ add: false });
+                overlay.fillStyle(variant.overlayColor, variant.overlayAlpha);
+                overlay.fillRect(0, 0, size, size);
+                renderTexture.draw(overlay);
+                overlay.destroy();
+            }
+
+            if (variant.highlightAlpha > 0) {
+                const highlight = this.make.graphics({ add: false });
+                highlight.fillStyle(0xffffff, variant.highlightAlpha);
+                const band = Math.max(4, Math.floor(size * 0.22));
+                highlight.fillRect(0, 0, size, band);
+                renderTexture.draw(highlight);
+                highlight.destroy();
+            }
+
+            if (variant.shadowAlpha > 0) {
+                const shadow = this.make.graphics({ add: false });
+                shadow.fillStyle(0x000000, variant.shadowAlpha);
+                const band = Math.max(4, Math.floor(size * 0.22));
+                shadow.fillRect(0, size - band, size, band);
+                renderTexture.draw(shadow);
+                shadow.destroy();
+            }
+
+            if (variant.crackAlpha > 0) {
+                const cracks = this.make.graphics({ add: false });
+                cracks.lineStyle(Math.max(1, Math.floor(size * 0.04)), variant.crackColor, variant.crackAlpha);
+                cracks.beginPath();
+                cracks.moveTo(Math.random() * size * 0.25, size * 0.1);
+                cracks.lineTo(size * (0.25 + Math.random() * 0.2), size * 0.55);
+                cracks.lineTo(size * (0.05 + Math.random() * 0.15), size * 0.95);
+                cracks.strokePath();
+                cracks.beginPath();
+                cracks.moveTo(size * (0.75 + Math.random() * 0.2), size * 0.05);
+                cracks.lineTo(size * (0.55 + Math.random() * 0.2), size * 0.45);
+                cracks.lineTo(size * (0.7 + Math.random() * 0.2), size * 0.98);
+                cracks.strokePath();
+                renderTexture.draw(cracks);
+                cracks.destroy();
+            }
+
+            if (variant.speckAlpha > 0) {
+                const specks = this.make.graphics({ add: false });
+                specks.fillStyle(variant.speckColor, variant.speckAlpha);
+                const speckCount = Math.max(4, Math.floor(size / 6));
+                for (let i = 0; i < speckCount; i++) {
+                    const w = Math.max(1, Math.floor(size * (0.04 + Math.random() * 0.06)));
+                    const h = Math.max(1, Math.floor(size * (0.04 + Math.random() * 0.06)));
+                    const x = Math.floor(Math.random() * Math.max(1, size - w));
+                    const y = Math.floor(Math.random() * Math.max(1, size - h));
+                    specks.fillRect(x, y, w, h);
+                }
+                renderTexture.draw(specks);
+                specks.destroy();
+            }
+
+            const edge = this.make.graphics({ add: false });
+            edge.lineStyle(Math.max(1, Math.floor(size * 0.05)), 0x000000, 0.22);
+            edge.strokeRect(0, 0, size, size);
+            renderTexture.draw(edge);
+            edge.destroy();
+
+            renderTexture.saveTexture(variant.key);
+            renderTexture.destroy();
+        });
+    }
+
+    getWallTextureVariants() {
+        const variants = [WALL_TEXTURE_KEY, ...WALL_TEXTURE_VARIANT_KEYS];
+        return variants.filter(key => this.textures.exists(key));
     }
 
     preloadPlayerAssets() {

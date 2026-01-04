@@ -28,14 +28,12 @@
 declare module '$env/static/private' {
 	export const NVM_INC: string;
 	export const MANPATH: string;
-	export const CHESS_DATABASE_URL: string;
 	export const NODE: string;
 	export const SSL_CERT_FILE: string;
 	export const INIT_CWD: string;
 	export const NVM_CD_FLAGS: string;
-	export const SHELL: string;
 	export const TERM: string;
-	export const CHESS_CORS_ORIGINS: string;
+	export const SHELL: string;
 	export const HOMEBREW_REPOSITORY: string;
 	export const CURL_CA_BUNDLE: string;
 	export const TMPDIR: string;
@@ -78,7 +76,6 @@ declare module '$env/static/private' {
 	export const PWD: string;
 	export const npm_lifecycle_event: string;
 	export const EDITOR: string;
-	export const CHESS_SECRET_KEY: string;
 	export const KITTY_PID: string;
 	export const npm_package_name: string;
 	export const LANG: string;
@@ -105,8 +102,8 @@ declare module '$env/static/private' {
 	export const CONDA_DEFAULT_ENV: string;
 	export const NVM_BIN: string;
 	export const npm_config_user_agent: string;
-	export const KITTY_INSTALLATION_DIR: string;
 	export const KITTY_WINDOW_ID: string;
+	export const KITTY_INSTALLATION_DIR: string;
 	export const INFOPATH: string;
 	export const HOMEBREW_CELLAR: string;
 	export const BAT_THEME: string;
@@ -151,14 +148,12 @@ declare module '$env/dynamic/private' {
 	export const env: {
 		NVM_INC: string;
 		MANPATH: string;
-		CHESS_DATABASE_URL: string;
 		NODE: string;
 		SSL_CERT_FILE: string;
 		INIT_CWD: string;
 		NVM_CD_FLAGS: string;
-		SHELL: string;
 		TERM: string;
-		CHESS_CORS_ORIGINS: string;
+		SHELL: string;
 		HOMEBREW_REPOSITORY: string;
 		CURL_CA_BUNDLE: string;
 		TMPDIR: string;
@@ -201,7 +196,6 @@ declare module '$env/dynamic/private' {
 		PWD: string;
 		npm_lifecycle_event: string;
 		EDITOR: string;
-		CHESS_SECRET_KEY: string;
 		KITTY_PID: string;
 		npm_package_name: string;
 		LANG: string;
@@ -228,8 +222,8 @@ declare module '$env/dynamic/private' {
 		CONDA_DEFAULT_ENV: string;
 		NVM_BIN: string;
 		npm_config_user_agent: string;
-		KITTY_INSTALLATION_DIR: string;
 		KITTY_WINDOW_ID: string;
+		KITTY_INSTALLATION_DIR: string;
 		INFOPATH: string;
 		HOMEBREW_CELLAR: string;
 		BAT_THEME: string;

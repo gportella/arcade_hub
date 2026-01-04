@@ -8,11 +8,29 @@
     let statusMessage = "";
     let isLandscape = false;
 
+    const requestLevelChange = (targetId = null) => {
+        const scene = phaserRef.scene;
+        if (scene?.scene) {
+            const payload = typeof targetId === "string" && targetId.length > 0
+                ? { levelId: targetId }
+                : { levelId: scene.levelId };
+            scene.scene.restart(payload);
+            return;
+        }
+
+        if (typeof targetId === "string" && targetId.length > 0) {
+            EventBus.emit("request-load-level", targetId);
+        } else {
+            EventBus.emit("request-restart");
+        }
+    };
+
     const handleRestart = (event) => {
         if (event && typeof event.preventDefault === "function") {
             event.preventDefault();
         }
-        EventBus.emit("request-restart");
+        statusMessage = "";
+        requestLevelChange();
     };
 
     const handlePrev = (event) => {
@@ -20,7 +38,8 @@
             event.preventDefault();
         }
         if (levelInfo?.prevId) {
-            EventBus.emit("request-load-level", levelInfo.prevId);
+            statusMessage = "";
+            requestLevelChange(levelInfo.prevId);
         }
     };
 
@@ -29,7 +48,8 @@
             event.preventDefault();
         }
         if (levelInfo?.nextId) {
-            EventBus.emit("request-load-level", levelInfo.nextId);
+            statusMessage = "";
+            requestLevelChange(levelInfo.nextId);
         }
     };
 
@@ -56,13 +76,21 @@
             statusMessage = info?.nextId ? "Advancing to the next puzzle..." : "All puzzles solved!";
         };
 
+        const onSceneReady = () => {
+            EventBus.emit("request-level-state");
+        };
+
         EventBus.on("level-changed", onLevelChanged);
         EventBus.on("level-complete", onLevelComplete);
+        EventBus.on("current-scene-ready", onSceneReady);
+
+        EventBus.emit("request-level-state");
 
         return () => {
             window.removeEventListener("resize", updateOrientation);
             EventBus.off("level-changed", onLevelChanged);
             EventBus.off("level-complete", onLevelComplete);
+            EventBus.off("current-scene-ready", onSceneReady);
         };
     });
 </script>

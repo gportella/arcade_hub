@@ -2,11 +2,16 @@
     <title>Phaser Svelte Template</title>
 </svelte:head>
 
-<slot />
+<div class="layout-root">
+    <slot />
+</div>
 
 <style>
+    .layout-root {
+        min-height: 100vh;
+    }
+
     :global(body) {
-        background-color: #0cc9bd;
         margin: 0;
         padding: 0;
         color: rgba(255, 255, 255, 0.87);

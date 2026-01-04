@@ -7,18 +7,17 @@ export class PushableBox {
         this.cell = { col: startCell.col, row: startCell.row };
         this.tween = null;
 
-        // Simple texture for the pushable box
-        if (scene.textures.exists(textureKey)) {
-            scene.textures.remove(textureKey);
+        const hasExternalTexture = scene.textures.exists(textureKey);
+        if (!hasExternalTexture) {
+            const g = scene.add.graphics();
+            g.fillStyle(0xffc107, 1).fillRect(0, 0, size, size);
+            g.lineStyle(2, 0xff6f00, 1).strokeRect(0, 0, size, size);
+            g.generateTexture(textureKey, size, size);
+            g.destroy();
         }
 
-        const g = scene.add.graphics();
-        g.fillStyle(0xffc107, 1).fillRect(0, 0, size, size);
-        g.lineStyle(2, 0xff6f00, 1).strokeRect(0, 0, size, size);
-        g.generateTexture(textureKey, size, size);
-        g.destroy();
-
         this.sprite = scene.add.image(0, 0, textureKey).setOrigin(0).setDepth(300);
+        this.sprite.setDisplaySize(this.size, this.size);
         this.setCell(startCell.col, startCell.row);
     }
 

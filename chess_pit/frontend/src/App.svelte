@@ -38,6 +38,9 @@
     t,
   } from "./lib/i18n";
 
+  // Expose dev flag for testing UI in development mode
+  const DEV = Boolean(typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV);
+
   const VIEW = Object.freeze({
     LANDING: "landing",
     GAMES: "games",
@@ -1712,6 +1715,14 @@
 </script>
 
 <div class="app-frame">
+  {#if DEV}
+    <div class="dev-notice-test" aria-hidden="true">
+      <button type="button" on:click={() => (hubError = 'Test hub error: connection lost')}>Hub Error</button>
+      <button type="button" on:click={() => (gameError = 'Test game error: engine crashed')}>Game Error</button>
+      <button type="button" on:click={() => (landingError = 'Test landing error: invalid credentials')}>Landing Error</button>
+      <button type="button" on:click={() => { hubError = ''; gameError = ''; landingError = ''; }}>Clear</button>
+    </div>
+  {/if}
   {#if currentView === VIEW.LANDING}
     <LandingView
       showcaseFen={SHOWCASE_FEN}
@@ -1826,16 +1837,36 @@
   .app-frame {
     width: 100%;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
   }
 
   .notice {
-    margin-bottom: 1rem;
+    margin: 0.75rem auto 1rem auto;
+    align-self: center;
+    max-width: min(920px, 100%);
     background: rgba(239, 68, 68, 0.18);
     border: 1px solid rgba(239, 68, 68, 0.35);
     color: #fecaca;
     padding: 0.65rem 1rem;
     border-radius: 12px;
     font-size: 0.9rem;
+  }
+
+  /* Dev-only test toolbar to trigger notice messages */
+  .dev-notice-test {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    z-index: 9999;
+  }
+
+  .dev-notice-test button {
+    padding: 0.45rem 0.6rem;
+    font-size: 0.85rem;
+    border-radius: 8px;
   }
 </style>

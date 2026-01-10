@@ -925,6 +925,15 @@
     }
   }
 
+  // Attempt to reconnect/load the hub and restart polling
+  async function reconnectHub() {
+    hubError = "";
+    const ok = await loadHub();
+    if (ok) {
+      startHubPolling();
+    }
+  }
+
   async function loadAdminUsers() {
     if (!accessToken || !isAuthenticated || !currentUser?.is_admin) {
       adminUsers = [];
@@ -1150,6 +1159,24 @@
     socket.onclose = () => {
       socket = null;
     };
+  }
+
+  // Attempt to reconnect the current game websocket and refresh game state
+  async function reconnectGame() {
+    gameError = "";
+    if (!selectedGameId || !isAuthenticated) {
+      gameError = tr("errors.loadGame");
+      return;
+    }
+    try {
+      await refreshSelectedGame(selectedGameId);
+      if (selectedGameOrigin === "hub") {
+        connectSocket(selectedGameId);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      gameError = message || tr("errors.loadGame");
+    }
   }
 
   async function openGame(id, options = {}) {
@@ -1737,7 +1764,10 @@
     />
   {:else if currentView === VIEW.GAMES && isAuthenticated}
     {#if hubError}
-      <p class="notice" role="alert">{hubError}</p>
+      <p class="notice" role="alert">
+        {hubError}
+        <button class="notice-action" on:click={reconnectHub} type="button">Reconnect</button>
+      </p>
     {/if}
     <GameHubView
       user={hubUser}
@@ -1776,7 +1806,10 @@
     />
   {:else if currentView === VIEW.PLAY && isAuthenticated && selectedGame}
     {#if gameError}
-      <p class="notice" role="alert">{gameError}</p>
+      <p class="notice" role="alert">
+        {gameError}
+        <button class="notice-action" on:click={reconnectGame} type="button">Reconnect</button>
+      </p>
     {/if}
     <GamePlayView
       game={selectedGame}
@@ -1868,5 +1901,20 @@
     padding: 0.45rem 0.6rem;
     font-size: 0.85rem;
     border-radius: 8px;
+  }
+
+  .notice-action {
+    margin-left: 0.75rem;
+    background: transparent;
+    border: 1px solid rgba(226, 232, 240, 0.18);
+    color: #f8fafc;
+    padding: 0.35rem 0.6rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
+  .notice-action:hover {
+    background: rgba(226, 232, 240, 0.06);
   }
 </style>

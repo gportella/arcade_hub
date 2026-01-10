@@ -38,8 +38,6 @@
     t,
   } from "./lib/i18n";
 
-  // Expose dev flag for testing UI in development mode
-  const DEV = Boolean(typeof import.meta !== "undefined" && import.meta.env && import.meta.env.DEV);
 
   const VIEW = Object.freeze({
     LANDING: "landing",
@@ -1742,14 +1740,6 @@
 </script>
 
 <div class="app-frame">
-  {#if DEV}
-    <div class="dev-notice-test" aria-hidden="true">
-      <button type="button" on:click={() => (hubError = 'Test hub error: connection lost')}>Hub Error</button>
-      <button type="button" on:click={() => (gameError = 'Test game error: engine crashed')}>Game Error</button>
-      <button type="button" on:click={() => (landingError = 'Test landing error: invalid credentials')}>Landing Error</button>
-      <button type="button" on:click={() => { hubError = ''; gameError = ''; landingError = ''; }}>Clear</button>
-    </div>
-  {/if}
   {#if currentView === VIEW.LANDING}
     <LandingView
       showcaseFen={SHOWCASE_FEN}
